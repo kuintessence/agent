@@ -1,0 +1,74 @@
+[package]
+name = "agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies.alice-infrastructure]
+git = "https://github.com/kuintessence/alice"
+features = ["telemetry"]
+
+[dependencies.alice-di]
+git = "https://github.com/kuintessence/alice"
+
+[dependencies]
+domain = { workspace = true }
+service = { path = "../service" }
+# alice
+alice-architecture = { workspace = true }
+# concurrent
+async-trait = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+flume = "0.10"
+arc-swap = "1.6"
+# log
+tracing = "0.1"
+# data
+config = { version = "0.13", features = ["yaml"] }
+uuid = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bytesize = { version = "1.2", features = ["serde"] }
+csv = "1.2"
+bytes = "1.4"
+# error
+anyhow = { workspace = true }
+thiserror = "1.0"
+# web
+reqwest = { version = "0.11", default-features = false, features = [
+  "json",
+  "multipart",
+  "stream",
+  "rustls-tls",
+] }
+reqwest-middleware = "0.2"
+reqwest-retry = "0.3"
+task-local-extensions = "0.1"
+url = "2.3"
+base64-url = "2.0"
+# middlewares
+rdkafka = "0.29"
+# system
+notify = { version = "5.1", default-features = false, features = [
+  "macos_fsevent",
+] }
+rustix = { version = "0.38", default-features = false, features = ["fs"] }
+# test
+mockall = "0.11"
+# TUI
+colored = "2.0"
+crossterm = "0.27"
+# miscellaneous
+chrono = { workspace = true }
+regex = { workspace = true }
+blake3 = "1.3"
+rand = "0.8"
+# code
+typed-builder = { workspace = true }
+indoc = "2"
+# We don't use it explicitly, build_container! need it
+derive_builder = "0.12"
+retry-policies = "0.2.0"
+
+[build-dependencies]
+cmake = "0.1"
