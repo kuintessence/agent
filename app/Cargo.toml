@@ -19,7 +19,7 @@ alice-architecture = { workspace = true }
 async-trait = { workspace = true }
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
-flume = "0.10"
+flume = "0.11"
 arc-swap = "1.6"
 # log
 tracing = "0.1"
@@ -47,9 +47,9 @@ task-local-extensions = "0.1"
 url = "2.3"
 base64-url = "2.0"
 # middlewares
-rdkafka = "0.29"
+rdkafka = "0.34"
 # system
-notify = { version = "5.1", default-features = false, features = [
+notify = { version = "6.1", default-features = false, features = [
   "macos_fsevent",
 ] }
 rustix = { version = "0.38", default-features = false, features = ["fs"] }

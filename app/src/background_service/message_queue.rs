@@ -1,7 +1,11 @@
-use std::collections::{HashMap, HashSet};
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use alice_architecture::hosting::IBackgroundService;
+use alice_infrastructure::config::MessageQueueConfig;
+use anyhow::{anyhow, Context};
 use domain::{
     model::entity::{
         file::FileType,
@@ -14,6 +18,8 @@ use domain::{
     service::TaskSchedulerService,
 };
 use futures::StreamExt;
+use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
+use rdkafka::client::DefaultClientContext;
 use rdkafka::{
     config::RDKafkaLogLevel,
     consumer::{Consumer, StreamConsumer},
@@ -21,169 +27,39 @@ use rdkafka::{
     ClientConfig, Message,
 };
 use tracing::Instrument;
+use uuid::Uuid;
+
+use crate::dto;
 
 pub struct KafkaMessageQueue {
-    topics: HashSet<String>,
-    client_options: HashMap<String, String>,
+    stream_consumer: StreamConsumer,
     service: Arc<dyn TaskSchedulerService>,
 }
 
 #[async_trait::async_trait]
 impl IBackgroundService for KafkaMessageQueue {
     async fn run(&self) -> () {
-        let mut kafka_config = ClientConfig::new();
-        let mut new_client_options = HashMap::new();
-        for (option_key, option_value) in self.client_options.iter() {
-            if option_key.contains('_') {
-                new_client_options.insert(option_key.clone().replace('_', "."), option_value);
-            } else {
-                new_client_options.entry(option_key.clone()).or_insert(option_value);
-            }
-        }
-        for (option_key, option_value) in new_client_options.iter() {
-            kafka_config.set(option_key.as_str(), option_value.as_str());
-        }
-        kafka_config.set_log_level(RDKafkaLogLevel::Debug);
-        let stream_consumer: StreamConsumer = kafka_config.create().unwrap();
-        stream_consumer
-            .subscribe(
-                self.topics.iter().map(|topic| topic.as_str()).collect::<Vec<&str>>().as_slice(),
-            )
-            .unwrap();
-        let mut stream = stream_consumer.stream();
+        let mut stream = self.stream_consumer.stream();
         loop {
             match stream.next().await {
                 Some(Ok(borrowed_message)) => {
-                    let message = match borrowed_message.payload_view::<str>() {
-                        Some(x) => x.unwrap_or("{}"),
-                        None => "{}",
-                    };
-                    tracing::debug!("Message: {}", message);
-                    let message: crate::dto::Task = match serde_json::from_str(message) {
+                    let message = borrowed_message
+                        .payload_view::<str>()
+                        .and_then(|msg| msg.ok())
+                        .unwrap_or("{}");
+                    tracing::debug!("Message: {message}");
+                    let task: dto::Task = match serde_json::from_str(message) {
                         Ok(x) => x,
                         Err(e) => {
-                            tracing::error!("{}", e);
+                            tracing::error!("{e}");
                             continue;
                         }
                     };
                     let service = self.service.clone();
                     tokio::spawn(
-                        async move {
-                            tracing::debug!("Message: {:#?}", message);
-                            match message.command {
-                                crate::dto::TaskCommand::Start => {
-                                    let message = message.clone();
-                                    match service
-                                        .enqueue_task(&Task {
-                                            id: message.id,
-                                            body: message
-                                                .body
-                                                .iter()
-                                                .map(|x| {
-                                                    let mut sub_task =
-                                                        SubTask {
-                                                            id: uuid::Uuid::new_v4(),
-                                                            parent_id: message.id,
-                                                            status: TaskStatus::Queuing,
-                                                            ..Default::default()
-                                                        };
-                                                    match x {
-                                                        crate::dto::TaskBody::SoftwareDeployment {
-                                                            facility_kind,
-                                                            command,
-                                                        } => {
-                                                            sub_task.facility_kind = match facility_kind.clone() {
-                                                                crate::dto::FacilityKind::Spack { name, argument_list } => FacilityKind::Spack { name, argument_list },
-                                                                crate::dto::FacilityKind::Singularity { image, tag } => FacilityKind::Singularity { image, tag },
-                                                            };
-                                                            sub_task.task_type = TaskType::SoftwareDeployment { status: match command {
-                                                                crate::dto::SoftwareDeploymentCommand::Install => SoftwareDeploymentStatus::Install,
-                                                                crate::dto::SoftwareDeploymentCommand::Uninstall => SoftwareDeploymentStatus::Uninstall,
-                                                            } };
-                                                        },
-                                                        crate::dto::TaskBody::UsecaseExecution {
-                                                            name,
-                                                            facility_kind,
-                                                            arguments,
-                                                            environments,
-                                                            std_in,
-                                                            files,
-                                                            requirements,
-                                                        } => {
-                                                            sub_task.facility_kind = match facility_kind.clone() {
-                                                                crate::dto::FacilityKind::Spack { name, argument_list } => FacilityKind::Spack { name, argument_list },
-                                                                crate::dto::FacilityKind::Singularity { image, tag } => FacilityKind::Singularity { image, tag },
-                                                            };
-                                                            sub_task.requirements = requirements.clone().map(|x| {
-                                                                Requirements { cpu_cores: x.cpu_cores, node_count: x.node_count, max_wall_time: x.max_wall_time, max_cpu_time: x.max_cpu_time, stop_time: x.stop_time }
-                                                            });
-                                                            sub_task.task_type = TaskType::UsecaseExecution { name: name.clone(), arguments: arguments.clone(), environments: environments.clone(), std_in: match std_in {
-                                                                crate::dto::StdInKind::Text { text } => StdInKind::Text { text: text.clone() },
-                                                                crate::dto::StdInKind::File { path } => StdInKind::File { path: path.clone() },
-                                                                crate::dto::StdInKind::None => StdInKind::Unknown,
-                                                            }, files: files.iter().map(|x| match x.clone() {
-                                                                crate::dto::FileInfo::Input { path, is_package, form } => match form {
-                                                                    crate::dto::InFileForm::Id(id) => FileInfo {id: uuid::Uuid::new_v4(), metadata_id: id, path, is_package, optional: false, file_type: FileType::IN, is_generated: false, ..Default::default() },
-                                                                    crate::dto::InFileForm::Content(text) => FileInfo { id: uuid::Uuid::new_v4(), metadata_id: uuid::Uuid::new_v4(), path, is_package, optional: false, file_type: FileType::IN, is_generated: true, text }
-                                                                },
-                                                                crate::dto::FileInfo::Output { id, path, is_package, optional } => FileInfo {id: uuid::Uuid::new_v4(), metadata_id: id, path, is_package, optional, file_type: FileType::OUT, ..Default::default() },
-                                                            }).collect::<Vec<FileInfo>>() }
-                                                        },
-                                                        crate::dto::TaskBody::CollectedOut {
-                                                            from,
-                                                            rule,
-                                                            to,
-                                                            optional,
-                                                        } => {
-                                                            sub_task.task_type = TaskType::CollectedOut { from: match from {
-                                                                crate::dto::CollectFrom::FileOut { path } => CollectFrom::FileOut { path: path.clone() },
-                                                                crate::dto::CollectFrom::Stdout => CollectFrom::Stdout,
-                                                                crate::dto::CollectFrom::Stderr => CollectFrom::Stderr,
-                                                            }, rule: match rule.clone() {
-                                                                crate::dto::CollectRule::Regex(exp) => CollectRule::Regex { exp },
-                                                                crate::dto::CollectRule::BottomLines(n) => CollectRule::BottomLines { n },
-                                                                crate::dto::CollectRule::TopLines(n) => CollectRule::TopLines { n },
-                                                            }, to: match to.clone() {
-                                                                crate::dto::CollectTo::File { id, path } => CollectTo::File { id, path },
-                                                                crate::dto::CollectTo::Text { id } => CollectTo::Text { id },
-                                                            }, optional: *optional }
-                                                        },
-                                                    }
-                                                    sub_task
-                                                })
-                                                .collect(),
-                                            update_time: chrono::Utc::now(),
-                                            ..Default::default()
-                                        })
-                                        .await
-                                    {
-                                        Ok(()) => {}
-                                        Err(e) => tracing::error!("{}", e),
-                                    }
-                                }
-                                crate::dto::TaskCommand::Pause => {
-                                    match service.pause_task(message.id.to_string().as_str()).await
-                                    {
-                                        Ok(()) => {}
-                                        Err(e) => tracing::error!("{}", e),
-                                    }
-                                }
-                                crate::dto::TaskCommand::Continue => {
-                                    match service
-                                        .continue_task(message.id.to_string().as_str())
-                                        .await
-                                    {
-                                        Ok(()) => {}
-                                        Err(e) => tracing::error!("{}", e),
-                                    }
-                                }
-                                crate::dto::TaskCommand::Delete => {
-                                    match service.delete_task(message.id.to_string().as_str(), false).await
-                                    {
-                                        Ok(()) => {}
-                                        Err(e) => tracing::error!("{}", e),
-                                    }
-                                }
+                        async {
+                            if let Err(e) = routine(task, service).await {
+                                tracing::error!("{e}");
                             }
                         }
                         .instrument(tracing::trace_span!("kafka_message_queue")),
@@ -191,30 +67,244 @@ impl IBackgroundService for KafkaMessageQueue {
                 }
                 Some(Err(kafka_error)) => match kafka_error {
                     KafkaError::PartitionEOF(partition) => {
-                        tracing::info!("at end of partition {:?}", partition);
+                        tracing::info!("at end of partition {partition:?}");
                     }
-                    _ => tracing::error!("errors from kafka, {}", kafka_error),
+                    _ => tracing::error!("errors from kafka, {kafka_error}"),
                 },
-                None => {}
+                None => (),
             }
         }
     }
 }
 
-impl KafkaMessageQueue {
-    pub fn new(
-        service: Arc<dyn TaskSchedulerService>,
-        topics: Vec<String>,
-        client_options: HashMap<String, String>,
-    ) -> Self {
-        let mut new_topics = HashSet::new();
-        for topic in topics {
-            new_topics.insert(topic.to_string());
+async fn routine(task: dto::Task, service: Arc<dyn TaskSchedulerService>) -> anyhow::Result<()> {
+    tracing::debug!("Message: {task:#?}");
+    match task.command {
+        dto::TaskCommand::Start => {
+            let task = Task {
+                id: task.id,
+                body: task
+                    .body
+                    .iter()
+                    .map(|x| {
+                        let mut sub_task = SubTask {
+                            id: Uuid::new_v4(),
+                            parent_id: task.id,
+                            status: TaskStatus::Queuing,
+                            ..Default::default()
+                        };
+                        match x {
+                            dto::TaskBody::SoftwareDeployment {
+                                facility_kind,
+                                command,
+                            } => {
+                                sub_task.facility_kind = match facility_kind.clone() {
+                                    dto::FacilityKind::Spack {
+                                        name,
+                                        argument_list,
+                                    } => FacilityKind::Spack {
+                                        name,
+                                        argument_list,
+                                    },
+                                    dto::FacilityKind::Singularity { image, tag } => {
+                                        FacilityKind::Singularity { image, tag }
+                                    }
+                                };
+                                sub_task.task_type = TaskType::SoftwareDeployment {
+                                    status: match command {
+                                        dto::SoftwareDeploymentCommand::Install => {
+                                            SoftwareDeploymentStatus::Install
+                                        }
+                                        dto::SoftwareDeploymentCommand::Uninstall => {
+                                            SoftwareDeploymentStatus::Uninstall
+                                        }
+                                    },
+                                };
+                            }
+                            dto::TaskBody::UsecaseExecution {
+                                name,
+                                facility_kind,
+                                arguments,
+                                environments,
+                                std_in,
+                                files,
+                                requirements,
+                            } => {
+                                sub_task.facility_kind = match facility_kind.clone() {
+                                    dto::FacilityKind::Spack {
+                                        name,
+                                        argument_list,
+                                    } => FacilityKind::Spack {
+                                        name,
+                                        argument_list,
+                                    },
+                                    dto::FacilityKind::Singularity { image, tag } => {
+                                        FacilityKind::Singularity { image, tag }
+                                    }
+                                };
+                                sub_task.requirements =
+                                    requirements.clone().map(|x| Requirements {
+                                        cpu_cores: x.cpu_cores,
+                                        node_count: x.node_count,
+                                        max_wall_time: x.max_wall_time,
+                                        max_cpu_time: x.max_cpu_time,
+                                        stop_time: x.stop_time,
+                                    });
+                                sub_task.task_type = TaskType::UsecaseExecution {
+                                    name: name.clone(),
+                                    arguments: arguments.clone(),
+                                    environments: environments.clone(),
+                                    std_in: match std_in {
+                                        dto::StdInKind::Text { text } => {
+                                            StdInKind::Text { text: text.clone() }
+                                        }
+                                        dto::StdInKind::File { path } => {
+                                            StdInKind::File { path: path.clone() }
+                                        }
+                                        dto::StdInKind::None => StdInKind::Unknown,
+                                    },
+                                    files: files
+                                        .iter()
+                                        .map(|x| match x.clone() {
+                                            dto::FileInfo::Input {
+                                                path,
+                                                is_package,
+                                                form,
+                                            } => match form {
+                                                dto::InFileForm::Id(id) => FileInfo {
+                                                    id: Uuid::new_v4(),
+                                                    metadata_id: id,
+                                                    path,
+                                                    is_package,
+                                                    optional: false,
+                                                    file_type: FileType::IN,
+                                                    is_generated: false,
+                                                    ..Default::default()
+                                                },
+                                                dto::InFileForm::Content(text) => FileInfo {
+                                                    id: Uuid::new_v4(),
+                                                    metadata_id: Uuid::new_v4(),
+                                                    path,
+                                                    is_package,
+                                                    optional: false,
+                                                    file_type: FileType::IN,
+                                                    is_generated: true,
+                                                    text,
+                                                },
+                                            },
+                                            dto::FileInfo::Output {
+                                                id,
+                                                path,
+                                                is_package,
+                                                optional,
+                                            } => FileInfo {
+                                                id: Uuid::new_v4(),
+                                                metadata_id: id,
+                                                path,
+                                                is_package,
+                                                optional,
+                                                file_type: FileType::OUT,
+                                                ..Default::default()
+                                            },
+                                        })
+                                        .collect::<Vec<FileInfo>>(),
+                                }
+                            }
+                            dto::TaskBody::CollectedOut {
+                                from,
+                                rule,
+                                to,
+                                optional,
+                            } => {
+                                sub_task.task_type = TaskType::CollectedOut {
+                                    from: match from {
+                                        dto::CollectFrom::FileOut { path } => {
+                                            CollectFrom::FileOut { path: path.clone() }
+                                        }
+                                        dto::CollectFrom::Stdout => CollectFrom::Stdout,
+                                        dto::CollectFrom::Stderr => CollectFrom::Stderr,
+                                    },
+                                    rule: match rule.clone() {
+                                        dto::CollectRule::Regex(exp) => CollectRule::Regex { exp },
+                                        dto::CollectRule::BottomLines(n) => {
+                                            CollectRule::BottomLines { n }
+                                        }
+                                        dto::CollectRule::TopLines(n) => {
+                                            CollectRule::TopLines { n }
+                                        }
+                                    },
+                                    to: match to.clone() {
+                                        dto::CollectTo::File { id, path } => {
+                                            CollectTo::File { id, path }
+                                        }
+                                        dto::CollectTo::Text { id } => CollectTo::Text { id },
+                                    },
+                                    optional: *optional,
+                                }
+                            }
+                        }
+                        sub_task
+                    })
+                    .collect(),
+                update_time: chrono::Utc::now(),
+                ..Default::default()
+            };
+
+            service.enqueue_task(&task).await
         }
-        Self {
-            topics: new_topics,
-            client_options,
-            service,
-        }
+        dto::TaskCommand::Pause => service.pause_task(&task.id.to_string()).await,
+        dto::TaskCommand::Continue => service.continue_task(&task.id.to_string()).await,
+        dto::TaskCommand::Delete => service.delete_task(&task.id.to_string(), false).await,
     }
+}
+
+impl KafkaMessageQueue {
+    pub async fn new(
+        mq: &MessageQueueConfig,
+        extra_topics: impl IntoIterator<Item = String>,
+        service: Arc<dyn TaskSchedulerService>,
+    ) -> anyhow::Result<Self> {
+        let mut topics: HashSet<_> = mq.topics().clone().into_iter().collect();
+        topics.extend(extra_topics);
+
+        let kafka_producer_config = client_config(mq.producer());
+        let kafka_consumer_config = client_config(mq.consumer());
+        let stream_consumer: StreamConsumer = kafka_consumer_config.create()?;
+        let admin_client: AdminClient<DefaultClientContext> = kafka_producer_config.create()?;
+
+        let new_topics: Vec<_> = topics
+            .iter()
+            .map(|topic| NewTopic::new(topic, 1, TopicReplication::Fixed(1)))
+            .collect();
+        let results = admin_client
+            .create_topics(&new_topics, &AdminOptions::default())
+            .await
+            .context("Failed to create topics")?;
+        for result in results {
+            let topic = result
+                .map_err(|(topic, e)| anyhow!("Failed to create topic {topic:?}, caused by {e}"))?;
+            tracing::debug!("Created topic: {topic}");
+        }
+
+        stream_consumer.subscribe(&topics.iter().map(String::as_str).collect::<Vec<&str>>())?;
+
+        Ok(Self {
+            stream_consumer,
+            service,
+        })
+    }
+}
+
+fn client_config(options: &HashMap<String, String>) -> ClientConfig {
+    let mut config = ClientConfig::new();
+    for (key, value) in options {
+        let key = if key.contains('_') {
+            Cow::from(key.replace('_', "."))
+        } else {
+            Cow::from(key)
+        };
+        config.set(key, value);
+    }
+    config.set_log_level(RDKafkaLogLevel::Debug);
+    config
 }

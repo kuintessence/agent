@@ -321,15 +321,12 @@ build_container! {
         }
     }
     message_queue: Arc<KafkaMessageQueue> {
-        build {
-            let client_options = common_config.mq().client_options().clone();
-            let mut topics = common_config.mq().topics().clone();
-            topics.push(topic);
+        build async {
             Arc::new(KafkaMessageQueue::new(
+                common_config.mq(),
+                [topic],
                 task_scheduler_service.clone(),
-                topics,
-                client_options,
-            ))
+            ).await?)
         }
     }
     resource_reporter: Arc<ResourceReporter> {
