@@ -139,7 +139,7 @@ build_container! {
     }
     spack_deployer_service: Arc<SpackDeployer> {
         build {
-            Arc::new(SpackDeployer::new(agent_config.ssh_proxy.clone()))
+            Arc::new(SpackDeployer::new(ssh_proxy.clone()))
         }
     }
     apptainer_deployer_service: Arc<ApptainerDeployer> {
