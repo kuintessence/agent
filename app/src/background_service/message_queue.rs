@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use alice_architecture::hosting::IBackgroundService;
 use alice_infrastructure::config::MessageQueueConfig;
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use domain::{
     model::entity::{
         file::FileType,
@@ -281,9 +281,15 @@ impl KafkaMessageQueue {
             .await
             .context("Failed to create topics")?;
         for result in results {
-            let topic = result
-                .map_err(|(topic, e)| anyhow!("Failed to create topic {topic:?}, caused by {e}"))?;
-            tracing::debug!("Created topic: {topic}");
+            match result {
+                Ok(topic) => tracing::debug!("Created topic: {topic}"),
+                Err((topic, e)) => match e {
+                    rdkafka::types::RDKafkaErrorCode::TopicAlreadyExists => {
+                        tracing::debug!("Topic: {topic} already exists.")
+                    }
+                    _ => anyhow::bail!("Failed to create topic {topic:?}, caused by {e}"),
+                },
+            }
         }
 
         stream_consumer.subscribe(&topics.iter().map(String::as_str).collect::<Vec<&str>>())?;
