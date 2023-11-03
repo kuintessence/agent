@@ -6,6 +6,13 @@ members = ["app", "domain", "service"]
 [workspace.dependencies.alice-architecture]
 git = "https://github.com/kuintessence/alice"
 
+[workspace.dependencies.alice-infrastructure]
+git = "https://github.com/kuintessence/alice"
+features = ["telemetry", "reqwest-middleware"]
+
+[workspace.dependencies.alice-di]
+git = "https://github.com/kuintessence/alice"
+
 [workspace.dependencies]
 domain = { path = "domain" }
 anyhow = "1"

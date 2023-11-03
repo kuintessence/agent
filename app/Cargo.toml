@@ -3,18 +3,13 @@ name = "agent"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies.alice-infrastructure]
-git = "https://github.com/kuintessence/alice"
-features = ["telemetry", "reqwest-middleware"]
-
-[dependencies.alice-di]
-git = "https://github.com/kuintessence/alice"
-
 [dependencies]
 domain = { workspace = true }
 service = { path = "../service" }
 # alice
 alice-architecture = { workspace = true }
+alice-infrastructure = { workspace = true }
+alice-di = { workspace = true }
 # concurrent
 async-trait = { workspace = true }
 tokio = { version = "1", features = ["full"] }

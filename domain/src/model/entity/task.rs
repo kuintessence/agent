@@ -1,7 +1,7 @@
-use alice_architecture::model::derive::AggregateRoot;
-use serde::{Deserialize, Serialize};
-
 use std::collections::HashMap;
+
+use alice_architecture::model::AggregateRoot;
+use serde::{Deserialize, Serialize};
 
 use super::file::FileType;
 
