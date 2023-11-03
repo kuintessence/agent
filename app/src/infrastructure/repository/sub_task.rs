@@ -1,4 +1,4 @@
-use alice_architecture::repository::{IDBRepository, IMutableRepository, IReadOnlyRepository};
+use alice_architecture::repository::{DBRepository, MutableRepository, ReadOnlyRepository};
 use domain::{
     model::entity::{
         file::{FileStatus, FileType},
@@ -12,13 +12,12 @@ use uuid::Uuid;
 use crate::infrastructure::database::JsonDb;
 
 #[async_trait::async_trait]
-impl IReadOnlyRepository<SubTask> for JsonDb {
-    async fn get_by_id(&self, uuid: &str) -> anyhow::Result<SubTask> {
-        let id = Uuid::parse_str(uuid)?;
+impl ReadOnlyRepository<SubTask> for JsonDb {
+    async fn get_by_id(&self, uuid: Uuid) -> anyhow::Result<SubTask> {
         let sub_tasks = self.sub_tasks.lock().await;
         let sub_task = sub_tasks
             .iter()
-            .find(|x| x.id == id)
+            .find(|x| x.id == uuid)
             .ok_or(anyhow::anyhow!("No such task id."))?;
         Ok(sub_task.clone())
     }
@@ -28,9 +27,9 @@ impl IReadOnlyRepository<SubTask> for JsonDb {
 }
 
 #[async_trait::async_trait]
-impl IMutableRepository<SubTask> for JsonDb {
+impl MutableRepository<SubTask> for JsonDb {
     /// 更新数据
-    async fn update(&self, entity: SubTask) -> anyhow::Result<SubTask> {
+    async fn update(&self, entity: &SubTask) -> anyhow::Result<()> {
         let mut sub_tasks = self.sub_tasks.lock().await;
         let index = sub_tasks
             .iter()
@@ -38,17 +37,17 @@ impl IMutableRepository<SubTask> for JsonDb {
             .ok_or(anyhow::anyhow!("No Such id"))?;
         sub_tasks.remove(index);
         sub_tasks.push(entity.clone());
-        Ok(entity)
+        Ok(())
     }
     /// 插入数据
-    async fn insert(&self, entity: SubTask) -> anyhow::Result<SubTask> {
+    async fn insert(&self, entity: &SubTask) -> anyhow::Result<Uuid> {
         let mut sub_tasks = self.sub_tasks.lock().await;
         if let Some(x) = sub_tasks.iter().position(|x| x.id == entity.id) {
             sub_tasks.remove(x);
         }
         if let TaskType::UsecaseExecution { files, .. } = entity.task_type.clone() {
             for file in files {
-                self.insert(File {
+                self.insert(&File {
                     id: file.id,
                     file_name: file.path.clone(),
                     related_task_body: entity.id,
@@ -67,33 +66,27 @@ impl IMutableRepository<SubTask> for JsonDb {
             }
         }
         sub_tasks.push(entity.clone());
-        Ok(entity)
+        Ok(entity.id)
     }
 
     /// 删除数据
-    async fn delete(&self, entity: SubTask) -> anyhow::Result<bool> {
+    async fn delete(&self, entity: &SubTask) -> anyhow::Result<()> {
         let mut sub_tasks = self.sub_tasks.lock().await;
         let index = sub_tasks
             .iter()
             .position(|x| x.id == entity.id)
             .ok_or(anyhow::anyhow!("No Such id"))?;
         sub_tasks.remove(index);
-        Ok(true)
+        Ok(())
     }
-    /// 使用 uuid 删除数据，`entity` 是用于指示当前实现类型的泛型模板，防止 Rust 产生方法重载的问题，
-    /// 但对于大多数数据库可尝试使用以下代码：
-    /// ``` no_run
-    /// // 建立一个空的枚举用于指示类型
-    /// let n: Option<TYPE> = None;
-    /// self.delete_by_id(entity.id.as_str(), n).await?;
-    /// ```
-    async fn delete_by_id(&self, uuid: &str, _entity: Option<SubTask>) -> anyhow::Result<bool> {
-        let id = Uuid::parse_str(uuid)?;
+    async fn delete_by_id(&self, uuid: Uuid) -> anyhow::Result<()> {
         let mut sub_tasks = self.sub_tasks.lock().await;
-        let index =
-            sub_tasks.iter().position(|x| x.id == id).ok_or(anyhow::anyhow!("No Such id"))?;
+        let index = sub_tasks
+            .iter()
+            .position(|x| x.id == uuid)
+            .ok_or(anyhow::anyhow!("No Such id"))?;
         sub_tasks.remove(index);
-        Ok(true)
+        Ok(())
     }
     /// 提交变更，在带有事务的数据库将提交事务，否则该方法应该仅返回 `Ok(true)`
     ///
@@ -102,7 +95,7 @@ impl IMutableRepository<SubTask> for JsonDb {
     }
 }
 
-impl IDBRepository<SubTask> for JsonDb {}
+impl DBRepository<SubTask> for JsonDb {}
 
 #[async_trait::async_trait]
 impl ISubTaskRepository for JsonDb {

@@ -14,6 +14,7 @@ use domain::{
     sender::{ISoftwareDeploymentSender, ISubTaskReportService},
     service::{DeploySoftwareService, SoftwareDeployerService, SubTaskService},
 };
+use uuid::Uuid;
 
 pub struct DeploySoftwareServiceImpl {
     sub_task_repo: Arc<dyn ISubTaskRepository + Send + Sync>,
@@ -24,7 +25,7 @@ pub struct DeploySoftwareServiceImpl {
 
 #[async_trait::async_trait]
 impl SubTaskService for DeploySoftwareServiceImpl {
-    async fn enqueue_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn enqueue_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let sub_task = self.sub_task_repo.get_by_id(id).await?;
         self.sender
             .send(SoftwareDeploymentCommand {
@@ -33,7 +34,7 @@ impl SubTaskService for DeploySoftwareServiceImpl {
             })
             .await?;
         self.sub_task_repo
-            .update(SubTask {
+            .update(&SubTask {
                 status: TaskStatus::Running,
                 ..sub_task
             })
@@ -41,7 +42,7 @@ impl SubTaskService for DeploySoftwareServiceImpl {
         self.sub_task_repo.save_changed().await?;
         Ok(())
     }
-    async fn delete_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn delete_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let sub_task = self.sub_task_repo.get_by_id(id).await?;
         self.sender
             .send(SoftwareDeploymentCommand {
@@ -49,11 +50,11 @@ impl SubTaskService for DeploySoftwareServiceImpl {
                 task_status: TaskStatus::Suspended,
             })
             .await?;
-        self.sub_task_repo.delete_by_id(id, None).await?;
+        self.sub_task_repo.delete_by_id(id).await?;
         self.sub_task_repo.save_changed().await?;
         Ok(())
     }
-    async fn pause_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn pause_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let sub_task = self.sub_task_repo.get_by_id(id).await?;
         self.sender
             .send(SoftwareDeploymentCommand {
@@ -62,7 +63,7 @@ impl SubTaskService for DeploySoftwareServiceImpl {
             })
             .await?;
         self.sub_task_repo
-            .update(SubTask {
+            .update(&SubTask {
                 status: TaskStatus::Suspended,
                 ..sub_task
             })
@@ -70,13 +71,13 @@ impl SubTaskService for DeploySoftwareServiceImpl {
         self.sub_task_repo.save_changed().await?;
         Ok(())
     }
-    async fn continue_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn continue_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         self.enqueue_sub_task(id).await
     }
     async fn refresh_all_status(&self) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn refresh_status(&self, _id: &str) -> anyhow::Result<()> {
+    async fn refresh_status(&self, _id: Uuid) -> anyhow::Result<()> {
         Ok(())
     }
     fn get_task_type(&self) -> TaskDisplayType {
@@ -86,10 +87,10 @@ impl SubTaskService for DeploySoftwareServiceImpl {
 
 #[async_trait::async_trait]
 impl DeploySoftwareService for DeploySoftwareServiceImpl {
-    async fn complete_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn complete_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let sub_task = self.sub_task_repo.get_by_id(id).await?;
         self.sub_task_repo
-            .update(SubTask {
+            .update(&SubTask {
                 status: TaskStatus::Completed,
                 ..sub_task
             })
@@ -97,10 +98,10 @@ impl DeploySoftwareService for DeploySoftwareServiceImpl {
         self.sub_task_repo.save_changed().await?;
         self.report_service.report_completed_task(id).await
     }
-    async fn fail_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn fail_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let sub_task = self.sub_task_repo.get_by_id(id).await?;
         self.sub_task_repo
-            .update(SubTask {
+            .update(&SubTask {
                 status: TaskStatus::Failed,
                 ..sub_task
             })
@@ -108,7 +109,7 @@ impl DeploySoftwareService for DeploySoftwareServiceImpl {
         self.sub_task_repo.save_changed().await?;
         self.report_service.report_failed_task(id).await
     }
-    async fn run_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn run_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let sub_task = self.sub_task_repo.get_by_id(id).await?;
         match &sub_task.facility_kind {
             FacilityKind::Spack {
@@ -136,7 +137,7 @@ impl DeploySoftwareService for DeploySoftwareServiceImpl {
                         }
                         Err(e) => {
                             self.sub_task_repo
-                                .update(SubTask {
+                                .update(&SubTask {
                                     failed_reason: format!("{e}"),
                                     ..sub_task
                                 })
@@ -153,7 +154,7 @@ impl DeploySoftwareService for DeploySoftwareServiceImpl {
                 }
                 None => {
                     self.sub_task_repo
-                        .update(SubTask {
+                        .update(&SubTask {
                             failed_reason: "No such package manager.".to_string(),
                             ..sub_task
                         })
@@ -191,7 +192,7 @@ impl DeploySoftwareService for DeploySoftwareServiceImpl {
                             }
                             Err(e) => {
                                 self.sub_task_repo
-                                    .update(SubTask {
+                                    .update(&SubTask {
                                         failed_reason: format!("{e}"),
                                         ..sub_task
                                     })
@@ -208,7 +209,7 @@ impl DeploySoftwareService for DeploySoftwareServiceImpl {
                     }
                     None => {
                         self.sub_task_repo
-                            .update(SubTask {
+                            .update(&SubTask {
                                 failed_reason: "No such package manager.".to_string(),
                                 ..sub_task
                             })
@@ -225,7 +226,7 @@ impl DeploySoftwareService for DeploySoftwareServiceImpl {
             }
             _ => {
                 self.sub_task_repo
-                    .update(SubTask {
+                    .update(&SubTask {
                         failed_reason: "No such package manager.".to_string(),
                         ..sub_task
                     })

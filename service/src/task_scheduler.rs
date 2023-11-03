@@ -39,7 +39,7 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
                 ..x
             })
             .collect();
-        self.repo.insert(task.clone()).await?;
+        self.repo.insert(&task).await?;
         self.repo.save_changed().await?;
         self.schedule_next_task_by_id(task.id).await
     }
@@ -53,11 +53,11 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
     }
 
     async fn schedule_next_task_by_id(&self, id: Uuid) -> anyhow::Result<()> {
-        let task = self.repo.get_by_id(id.to_string().as_str()).await?;
+        let task = self.repo.get_by_id(id).await?;
         if task.status == TaskStatus::Queuing {
             let task = task.clone();
             self.repo
-                .update(Task {
+                .update(&Task {
                     status: TaskStatus::Running,
                     ..task
                 })
@@ -66,7 +66,7 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
         } else if task.status != TaskStatus::Running {
             anyhow::bail!("Unable to schedule a task not in task queue {}.", task.id);
         }
-        self.report_service.report_started_task(&id.to_string()).await?;
+        self.report_service.report_started_task(id).await?;
 
         if task
             .body
@@ -94,28 +94,24 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
             .get(&task_type)
             .with_context(|| format!("No such sub task service called {task_type}"))?;
         match task_body.status {
-            TaskStatus::Queuing => {
-                Ok(x.enqueue_sub_task(task_body.id.to_string().as_str()).await?)
-            }
-            TaskStatus::Suspended => {
-                Ok(x.continue_sub_task(task_body.id.to_string().as_str()).await?)
-            }
+            TaskStatus::Queuing => Ok(x.enqueue_sub_task(task_body.id).await?),
+            TaskStatus::Suspended => Ok(x.continue_sub_task(task_body.id).await?),
             _ => unreachable!(),
         }
     }
 
-    async fn pause_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn pause_task(&self, id: Uuid) -> anyhow::Result<()> {
         let task = self.repo.get_by_id(id).await?;
         match task.status.clone() {
             TaskStatus::Queuing => {
                 for sub_task in task.body.iter() {
                     let task_type: TaskDisplayType = sub_task.task_type.clone().into();
                     if let Some(x) = self.sub_task_services.get(&task_type) {
-                        x.pause_sub_task(sub_task.id.to_string().as_str()).await?
+                        x.pause_sub_task(sub_task.id).await?
                     }
                 }
                 self.repo
-                    .update(Task {
+                    .update(&Task {
                         status: TaskStatus::Suspended,
                         ..task
                     })
@@ -129,11 +125,11 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
                 for sub_task in task.body.iter() {
                     let task_type: TaskDisplayType = sub_task.task_type.clone().into();
                     if let Some(x) = self.sub_task_services.get(&task_type) {
-                        x.pause_sub_task(sub_task.id.to_string().as_str()).await?
+                        x.pause_sub_task(sub_task.id).await?
                     }
                 }
                 self.repo
-                    .update(Task {
+                    .update(&Task {
                         status: TaskStatus::Suspended,
                         ..task
                     })
@@ -146,7 +142,7 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
         }
     }
 
-    async fn delete_task(&self, id: &str, is_internal: bool) -> anyhow::Result<()> {
+    async fn delete_task(&self, id: Uuid, is_internal: bool) -> anyhow::Result<()> {
         let task = self.repo.get_by_id(id).await?;
         if let TaskStatus::Running = task.status.clone() {
             let task_count = self.tasks_count.load(std::sync::atomic::Ordering::Relaxed);
@@ -155,11 +151,11 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
             for sub_task in task.body.iter() {
                 let task_type: TaskDisplayType = sub_task.task_type.clone().into();
                 if let Some(x) = self.sub_task_services.get(&task_type) {
-                    x.pause_sub_task(sub_task.id.to_string().as_str()).await?
+                    x.pause_sub_task(sub_task.id).await?
                 }
             }
             self.repo
-                .update(Task {
+                .update(&Task {
                     status: TaskStatus::Suspended,
                     ..task
                 })
@@ -170,21 +166,21 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
         for sub_task in task.body.iter() {
             let task_type: TaskDisplayType = sub_task.task_type.clone().into();
             if let Some(x) = self.sub_task_services.get(&task_type) {
-                x.delete_sub_task(sub_task.id.to_string().as_str()).await?
+                x.delete_sub_task(sub_task.id).await?
             }
         }
-        self.repo.delete_by_id(id, None).await?;
+        self.repo.delete_by_id(id).await?;
         if !is_internal {
             self.report_service.report_deleted_task(id).await?;
         }
         self.repo.save_changed().await.map(|_| ())
     }
 
-    async fn continue_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn continue_task(&self, id: Uuid) -> anyhow::Result<()> {
         let task = self.repo.get_by_id(id).await?;
         let task_id = task.id;
         self.repo
-            .update(Task {
+            .update(&Task {
                 status: TaskStatus::Queuing,
                 ..task
             })
@@ -194,10 +190,10 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
         self.schedule_next_task_by_id(task_id).await
     }
 
-    async fn complete_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn complete_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let sub_task = self.sub_repo.get_by_id(id).await?;
         self.sub_repo
-            .update(SubTask {
+            .update(&SubTask {
                 status: TaskStatus::Completed,
                 ..sub_task
             })
@@ -205,40 +201,35 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
         self.sub_repo.save_changed().await?;
         let task_count = self.tasks_count.load(std::sync::atomic::Ordering::Relaxed);
         self.tasks_count.store(task_count - 1, std::sync::atomic::Ordering::Relaxed);
-        let task = self.repo.get_by_id(sub_task.parent_id.to_string().as_str()).await?;
+        let task = self.repo.get_by_id(sub_task.parent_id).await?;
         if task.body.iter().all(|x| x.status == TaskStatus::Completed) {
             self.repo
-                .update(Task {
+                .update(&Task {
                     status: TaskStatus::Completed,
                     ..task
                 })
                 .await?;
             self.repo.save_changed().await?;
-            self.report_service
-                .report_completed_task(sub_task.parent_id.to_string().as_str())
-                .await?;
+            self.report_service.report_completed_task(sub_task.parent_id).await?;
             return self.schedule_next_task().await;
         }
         self.schedule_next_task_by_id(sub_task.parent_id).await
     }
 
-    async fn fail_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn fail_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let task_count = self.tasks_count.load(std::sync::atomic::Ordering::Relaxed);
         self.tasks_count.store(task_count - 1, std::sync::atomic::Ordering::Relaxed);
         let sub_task = self.sub_repo.get_by_id(id).await?;
-        let task = self.repo.get_by_id(sub_task.parent_id.to_string().as_str()).await?;
+        let task = self.repo.get_by_id(sub_task.parent_id).await?;
         self.repo
-            .update(Task {
+            .update(&Task {
                 status: TaskStatus::Failed,
                 ..task
             })
             .await?;
         self.repo.save_changed().await?;
         self.report_service
-            .report_failed_task(
-                sub_task.parent_id.to_string().as_str(),
-                sub_task.failed_reason.as_str(),
-            )
+            .report_failed_task(sub_task.parent_id, sub_task.failed_reason.as_str())
             .await?;
         self.schedule_next_task().await
     }
@@ -249,7 +240,7 @@ impl TaskSchedulerService for TaskSchedulerServiceImpl {
             if task.status == TaskStatus::Completed
                 && task.update_time > chrono::Utc::now() - chrono::Duration::hours(2)
             {
-                self.delete_task(task.id.to_string().as_str(), true).await?;
+                self.delete_task(task.id, true).await?;
             }
         }
         Ok(())

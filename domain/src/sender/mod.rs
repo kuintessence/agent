@@ -1,5 +1,7 @@
 //! The senders of background service. Using them is to limit the sending way.
 
+use uuid::Uuid;
+
 use crate::command::*;
 
 #[async_trait::async_trait]
@@ -19,6 +21,6 @@ pub trait ISoftwareDeploymentSender {
 
 #[async_trait::async_trait]
 pub trait ISubTaskReportService: Send + Sync {
-    async fn report_completed_task(&self, id: &str) -> anyhow::Result<()>;
-    async fn report_failed_task(&self, id: &str) -> anyhow::Result<()>;
+    async fn report_completed_task(&self, id: Uuid) -> anyhow::Result<()>;
+    async fn report_failed_task(&self, id: Uuid) -> anyhow::Result<()>;
 }

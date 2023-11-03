@@ -1,4 +1,4 @@
-use alice_architecture::hosting::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use domain::{
     command::SoftwareDeploymentCommand, model::entity::task::TaskStatus,
     sender::ISoftwareDeploymentSender, service::DeploySoftwareService,
@@ -14,7 +14,7 @@ pub struct SoftwareDeploymentRunner {
 }
 
 #[async_trait::async_trait]
-impl IBackgroundService for SoftwareDeploymentRunner {
+impl BackgroundService for SoftwareDeploymentRunner {
     async fn run(&self) {
         let mut spawns = HashMap::<Uuid, JoinHandle<()>>::new();
         loop {
@@ -25,7 +25,7 @@ impl IBackgroundService for SoftwareDeploymentRunner {
                         let spawn = tokio::spawn(
                             async move {
                                 let service = service.clone();
-                                match service.run_sub_task(command.id.to_string().as_str()).await {
+                                match service.run_sub_task(command.id).await {
                                     Ok(()) => {}
                                     Err(e) => tracing::error!("{}", e),
                                 }
@@ -42,14 +42,14 @@ impl IBackgroundService for SoftwareDeploymentRunner {
                     }
                     TaskStatus::Completing => {
                         spawns.remove(&command.id);
-                        match service.complete_sub_task(command.id.to_string().as_str()).await {
+                        match service.complete_sub_task(command.id).await {
                             Ok(()) => {}
                             Err(e) => tracing::error!("{}", e),
                         }
                     }
                     TaskStatus::Failed => {
                         spawns.remove(&command.id);
-                        match service.fail_sub_task(command.id.to_string().as_str()).await {
+                        match service.fail_sub_task(command.id).await {
                             Ok(()) => {}
                             Err(e) => tracing::error!("{}", e),
                         }

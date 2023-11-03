@@ -4,6 +4,7 @@ use domain::{repository::ITaskRepository, service::TaskReportService};
 use reqwest::Url;
 use reqwest_middleware::ClientWithMiddleware;
 use typed_builder::TypedBuilder;
+use uuid::Uuid;
 
 use crate::dto::{self, TaskResult, TaskUsedResource};
 use crate::infrastructure::http::header::TASK_ID;
@@ -17,7 +18,7 @@ pub struct TaskReportServiceImpl {
 
 #[async_trait::async_trait]
 impl TaskReportService for TaskReportServiceImpl {
-    async fn report_completed_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn report_completed_task(&self, id: Uuid) -> anyhow::Result<()> {
         let task = self.repo.get_by_id(id).await?;
         let used_resources = task
             .body
@@ -40,7 +41,7 @@ impl TaskReportService for TaskReportServiceImpl {
 
         self.base
             .post(self.url.clone())
-            .header(TASK_ID, id)
+            .header(TASK_ID, id.to_string())
             .json(&TaskResult {
                 id: id.to_string(),
                 status: dto::TaskResultStatus::Success,
@@ -54,10 +55,10 @@ impl TaskReportService for TaskReportServiceImpl {
         Ok(())
     }
 
-    async fn report_failed_task(&self, id: &str, message: &str) -> anyhow::Result<()> {
+    async fn report_failed_task(&self, id: Uuid, message: &str) -> anyhow::Result<()> {
         self.base
             .post(self.url.clone())
-            .header(TASK_ID, id)
+            .header(TASK_ID, id.to_string())
             .json(&TaskResult {
                 id: id.to_string(),
                 status: dto::TaskResultStatus::Failed,
@@ -71,10 +72,10 @@ impl TaskReportService for TaskReportServiceImpl {
         Ok(())
     }
 
-    async fn report_paused_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn report_paused_task(&self, id: Uuid) -> anyhow::Result<()> {
         self.base
             .post(self.url.clone())
-            .header(TASK_ID, id)
+            .header(TASK_ID, id.to_string())
             .json(&TaskResult {
                 id: id.to_string(),
                 status: dto::TaskResultStatus::Paused,
@@ -87,10 +88,10 @@ impl TaskReportService for TaskReportServiceImpl {
         Ok(())
     }
 
-    async fn report_resumed_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn report_resumed_task(&self, id: Uuid) -> anyhow::Result<()> {
         self.base
             .post(self.url.clone())
-            .header(TASK_ID, id)
+            .header(TASK_ID, id.to_string())
             .json(&TaskResult {
                 id: id.to_string(),
                 status: dto::TaskResultStatus::Continued,
@@ -103,10 +104,10 @@ impl TaskReportService for TaskReportServiceImpl {
         Ok(())
     }
 
-    async fn report_deleted_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn report_deleted_task(&self, id: Uuid) -> anyhow::Result<()> {
         self.base
             .post(self.url.clone())
-            .header(TASK_ID, id)
+            .header(TASK_ID, id.to_string())
             .json(&TaskResult {
                 id: id.to_string(),
                 status: dto::TaskResultStatus::Deleted,
@@ -119,10 +120,10 @@ impl TaskReportService for TaskReportServiceImpl {
         Ok(())
     }
 
-    async fn report_started_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn report_started_task(&self, id: Uuid) -> anyhow::Result<()> {
         self.base
             .post(self.url.clone())
-            .header(TASK_ID, id)
+            .header(TASK_ID, id.to_string())
             .json(&TaskResult {
                 id: id.to_string(),
                 status: dto::TaskResultStatus::Start,

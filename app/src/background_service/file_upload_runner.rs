@@ -2,7 +2,7 @@ use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use alice_architecture::hosting::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use domain::{
     command::FileTransferCommand, model::vo::FileTransferStatus, sender::IUploadSender,
     service::RunJobService,
@@ -68,7 +68,7 @@ struct StartRoutine {
 }
 
 #[async_trait::async_trait]
-impl IBackgroundService for FileUploadRunner {
+impl BackgroundService for FileUploadRunner {
     async fn run(&self) {
         loop {
             match self.receiver.recv_async().await {
@@ -333,14 +333,14 @@ impl StartRoutine {
         sleep(sleep_time).await;
         match task.await {
             Ok(()) => {
-                if let Err(e) = run_task.complete_job(command.id.to_string().as_str()).await {
+                if let Err(e) = run_task.complete_job(command.id).await {
                     tracing::error!("{e}");
                 }
             }
             Err(e) => {
                 if let Err(e) = run_task
                     .fail_job(
-                        task_file.related_task_body.to_string().as_str(),
+                        task_file.related_task_body,
                         format!(
                             "Cannot upload File {} to Node {} when uploading block, because of {e}",
                             task_file.id, command.parent_id

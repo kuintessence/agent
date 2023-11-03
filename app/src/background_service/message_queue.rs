@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use alice_architecture::hosting::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use alice_infrastructure::config::MessageQueueConfig;
 use anyhow::Context;
 use domain::{
@@ -37,7 +37,7 @@ pub struct KafkaMessageQueue {
 }
 
 #[async_trait::async_trait]
-impl IBackgroundService for KafkaMessageQueue {
+impl BackgroundService for KafkaMessageQueue {
     async fn run(&self) -> () {
         let mut stream = self.stream_consumer.stream();
         loop {
@@ -252,9 +252,9 @@ async fn routine(task: dto::Task, service: Arc<dyn TaskSchedulerService>) -> any
 
             service.enqueue_task(&task).await
         }
-        dto::TaskCommand::Pause => service.pause_task(&task.id.to_string()).await,
-        dto::TaskCommand::Continue => service.continue_task(&task.id.to_string()).await,
-        dto::TaskCommand::Delete => service.delete_task(&task.id.to_string(), false).await,
+        dto::TaskCommand::Pause => service.pause_task(task.id).await,
+        dto::TaskCommand::Continue => service.continue_task(task.id).await,
+        dto::TaskCommand::Delete => service.delete_task(task.id, false).await,
     }
 }
 
@@ -264,11 +264,11 @@ impl KafkaMessageQueue {
         extra_topics: impl IntoIterator<Item = String>,
         service: Arc<dyn TaskSchedulerService>,
     ) -> anyhow::Result<Self> {
-        let mut topics: HashSet<_> = mq.topics().clone().into_iter().collect();
+        let mut topics: HashSet<_> = mq.topics.clone().into_iter().collect();
         topics.extend(extra_topics);
 
-        let kafka_producer_config = client_config(mq.producer());
-        let kafka_consumer_config = client_config(mq.consumer());
+        let kafka_producer_config = client_config(&mq.producer);
+        let kafka_consumer_config = client_config(&mq.consumer);
         let stream_consumer: StreamConsumer = kafka_consumer_config.create()?;
         let admin_client: AdminClient<DefaultClientContext> = kafka_producer_config.create()?;
 

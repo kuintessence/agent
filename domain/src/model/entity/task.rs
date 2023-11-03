@@ -1,11 +1,11 @@
-use alice_architecture::IAggregateRoot;
+use alice_architecture::model::derive::AggregateRoot;
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 
 use super::file::FileType;
 
-#[derive(Default, Deserialize, Serialize, Clone, Debug, IAggregateRoot)]
+#[derive(Default, Deserialize, Serialize, Clone, Debug, AggregateRoot)]
 pub struct Task {
     pub id: uuid::Uuid,
     pub status: TaskStatus,
@@ -26,7 +26,7 @@ pub enum TaskStatus {
     Unknown,
 }
 
-#[derive(Clone, Default, Serialize, Deserialize, Debug, IAggregateRoot)]
+#[derive(Clone, Default, Serialize, Deserialize, Debug, AggregateRoot)]
 pub struct SubTask {
     pub id: uuid::Uuid,
     pub parent_id: uuid::Uuid,

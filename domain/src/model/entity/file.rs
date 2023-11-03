@@ -1,8 +1,8 @@
-use alice_architecture::IAggregateRoot;
+use alice_architecture::model::derive::AggregateRoot;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Default, Deserialize, Serialize, Clone, Debug, IAggregateRoot)]
+#[derive(Default, Deserialize, Serialize, Clone, Debug, AggregateRoot)]
 pub struct File {
     pub id: Uuid,
     pub metadata_id: Uuid,

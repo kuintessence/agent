@@ -1,8 +1,9 @@
-use alice_architecture::hosting::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use domain::service::RunJobService;
 use notify::{Config, Event, PollWatcher, RecursiveMode, Watcher};
 use std::time::Duration;
 use tracing::instrument::Instrument;
+use uuid::Uuid;
 
 pub struct FileSystemWatchRunner {
     service: std::sync::Arc<dyn RunJobService>,
@@ -11,7 +12,7 @@ pub struct FileSystemWatchRunner {
 }
 
 #[async_trait::async_trait]
-impl IBackgroundService for FileSystemWatchRunner {
+impl BackgroundService for FileSystemWatchRunner {
     async fn run(&self) {
         if self.ssh_proxy.is_some() {
             tracing::warn!("SSH proxy is not supported for file system watcher");
@@ -60,13 +61,22 @@ impl IBackgroundService for FileSystemWatchRunner {
                                                 );
                                                 let id = match tokio::fs::read_to_string(path).await
                                                 {
-                                                    Ok(x) => x,
+                                                    Ok(x) => match x.parse::<Uuid>() {
+                                                        Ok(x) => x,
+                                                        Err(e) => {
+                                                            tracing::error!("Error when decode signal file content to uuid: {}", e);
+                                                            return;
+                                                        }
+                                                    },
                                                     Err(e) => {
-                                                        tracing::error!("{}", e);
+                                                        tracing::error!("Error when read signal file: {}", e);
                                                         return;
                                                     }
                                                 };
-                                                match service.refresh_status(id.as_str()).await {
+                                                match service
+                                                    .refresh_status(id)
+                                                    .await
+                                                {
                                                     Ok(_) => (),
                                                     Err(e) => {
                                                         tracing::error!("{}", e);

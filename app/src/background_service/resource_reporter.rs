@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use alice_architecture::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use reqwest_middleware::ClientWithMiddleware;
 use tokio::time::sleep;
 use typed_builder::TypedBuilder;
@@ -21,7 +21,7 @@ pub struct ResourceReporter {
 }
 
 #[async_trait::async_trait]
-impl IBackgroundService for ResourceReporter {
+impl BackgroundService for ResourceReporter {
     async fn run(&self) {
         loop {
             if let Err(e) = self.update().await {

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use alice_architecture::hosting::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use alice_di::*;
 use domain::{
     model::{entity::task::DeployerType, vo::TaskDisplayType},
@@ -45,21 +45,20 @@ build_container! {
         topic: String,
         resource_stat: Arc<ResourceStat>
     )
-    common_config: alice_infrastructure::config::CommonConfig {
-        build {
-            let common_config: alice_infrastructure::config::CommonConfig = config.get("common").unwrap_or_default();
-            common_config
-        }
-    }
     agent_config: crate::config::AgentConfig {
         build {
-            let agent_config: crate::config::AgentConfig = config.get("agent").unwrap_or_default();
+            let agent_config: crate::config::AgentConfig = config.clone().try_deserialize()?;
             agent_config
+        }
+    }
+    common_config: alice_infrastructure::config::CommonConfig {
+        build {
+            agent_config.common.clone()
         }
     }
     repository: Arc<JsonDb> {
         build async {
-            Arc::new(JsonDb::new(common_config.db().url()).await?)
+            Arc::new(JsonDb::new(&common_config.db.url).await?)
         }
     }
     scp: Option<Arc<Scp>> {
@@ -323,7 +322,7 @@ build_container! {
     message_queue: Arc<KafkaMessageQueue> {
         build async {
             Arc::new(KafkaMessageQueue::new(
-                common_config.mq(),
+                &common_config.mq,
                 [topic],
                 task_scheduler_service.clone(),
             ).await?)
@@ -339,9 +338,9 @@ build_container! {
             )
         }
     }
-    background_services: Vec<Arc<dyn IBackgroundService + Send + Sync>> {
+    background_services: Vec<Arc<dyn BackgroundService + Send + Sync>> {
         build {
-            let result: Vec<Arc<dyn IBackgroundService + Send + Sync>> =
+            let result: Vec<Arc<dyn BackgroundService + Send + Sync>> =
                 vec![
                     file_download_runner.clone(),
                     file_upload_runner.clone(),

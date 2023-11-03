@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies.alice-infrastructure]
 git = "https://github.com/kuintessence/alice"
-features = ["telemetry"]
+features = ["telemetry", "reqwest-middleware"]
 
 [dependencies.alice-di]
 git = "https://github.com/kuintessence/alice"

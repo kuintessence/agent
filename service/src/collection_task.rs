@@ -12,6 +12,7 @@ use domain::{
     sender::ISubTaskReportService,
     service::{FileLoadService, SubTaskService},
 };
+use uuid::Uuid;
 
 pub struct CollectionTaskServiceImpl {
     repo: Arc<dyn ISubTaskRepository + Send + Sync>,
@@ -21,12 +22,12 @@ pub struct CollectionTaskServiceImpl {
 
 #[async_trait::async_trait]
 impl SubTaskService for CollectionTaskServiceImpl {
-    async fn enqueue_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn enqueue_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let sub_task = self.repo.get_by_id(id).await?;
         match self.inner_run_sub_task(&sub_task).await {
             Ok(()) => {
                 self.repo
-                    .update(SubTask {
+                    .update(&SubTask {
                         status: TaskStatus::Completed,
                         ..sub_task
                     })
@@ -36,7 +37,7 @@ impl SubTaskService for CollectionTaskServiceImpl {
             }
             Err(e) => {
                 self.repo
-                    .update(SubTask {
+                    .update(&SubTask {
                         status: TaskStatus::Failed,
                         failed_reason: format!("Failed to collect value. Because of {e}"),
                         ..sub_task
@@ -49,19 +50,19 @@ impl SubTaskService for CollectionTaskServiceImpl {
         }
         Ok(())
     }
-    async fn delete_sub_task(&self, _id: &str) -> anyhow::Result<()> {
+    async fn delete_sub_task(&self, _id: Uuid) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn pause_sub_task(&self, _id: &str) -> anyhow::Result<()> {
+    async fn pause_sub_task(&self, _id: Uuid) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn continue_sub_task(&self, _id: &str) -> anyhow::Result<()> {
+    async fn continue_sub_task(&self, _id: Uuid) -> anyhow::Result<()> {
         Ok(())
     }
     async fn refresh_all_status(&self) -> anyhow::Result<()> {
         Ok(())
     }
-    async fn refresh_status(&self, _id: &str) -> anyhow::Result<()> {
+    async fn refresh_status(&self, _id: Uuid) -> anyhow::Result<()> {
         Ok(())
     }
     fn get_task_type(&self) -> TaskDisplayType {
@@ -92,7 +93,7 @@ impl CollectionTaskServiceImpl {
             } => {
                 let input = match self
                     .file_load_service
-                    .load_file(sub_task.parent_id.to_string().as_str(), &from)
+                    .load_file(sub_task.parent_id, &from)
                     .await
                 {
                     Ok(x) => x,

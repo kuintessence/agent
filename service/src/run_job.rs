@@ -17,6 +17,7 @@ use domain::{
     sender::{IDownloadSender, ISubTaskReportService, IUploadSender},
     service::{JobSchedulerService, RunJobService, SoftwareDeployerService, SubTaskService},
 };
+use uuid::Uuid;
 
 pub struct RunJobServiceImpl {
     job_scheduler: Arc<dyn JobSchedulerService>,
@@ -31,19 +32,19 @@ pub struct RunJobServiceImpl {
 #[async_trait::async_trait]
 impl SubTaskService for RunJobServiceImpl {
     /// complete
-    async fn enqueue_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn enqueue_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let mut task = self.task_repo.get_by_id(id).await?;
         let files = self.task_file_repo.find_files_by_task(id).await?;
         let files = files.iter().filter(|x| x.file_type == FileType::IN);
         if files.clone().count() == 0 {
             task.status = TaskStatus::Running;
-            self.task_repo.update(task).await?;
+            self.task_repo.update(&task).await?;
             self.task_repo.save_changed().await?;
             return self.internal_run_job(id).await;
         }
         for task_file in files {
             self.task_file_repo
-                .update_task_file_status(task_file.id.to_string().as_str(), FileStatus::Downloading)
+                .update_task_file_status(task_file.id, FileStatus::Downloading)
                 .await?;
             self.download_sender
                 .send(FileTransferCommand {
@@ -55,27 +56,27 @@ impl SubTaskService for RunJobServiceImpl {
                 .await?;
         }
         task.status = TaskStatus::Running;
-        self.task_repo.update(task).await?;
+        self.task_repo.update(&task).await?;
         self.task_repo.save_changed().await?;
         Ok(())
     }
-    async fn delete_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn delete_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let task = self.task_repo.get_by_id(id).await?;
         if task.job_id != String::default() {
             self.job_scheduler.delete_job(&task.job_id).await?;
         }
-        let _ = self.task_repo.delete_by_id(id, None).await?;
+        let _ = self.task_repo.delete_by_id(id).await?;
         let _ = self.task_repo.save_changed().await?;
         Ok(())
     }
-    async fn pause_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn pause_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let mut task = self.task_repo.get_by_id(id).await?;
         if task.job_id != String::default() {
             self.job_scheduler.pause_job(&task.job_id).await?;
         }
         if task.status != TaskStatus::Completed || task.status != TaskStatus::Completing {
             task.status = TaskStatus::Suspended;
-            let _ = self.task_repo.update(task).await;
+            let _ = self.task_repo.update(&task).await;
             let task_files = self.task_file_repo.find_files_by_task(id).await?;
             for file in task_files {
                 if file.file_type == FileType::IN && file.status != FileStatus::Both {
@@ -93,14 +94,14 @@ impl SubTaskService for RunJobServiceImpl {
         let _ = self.task_repo.save_changed().await?;
         Ok(())
     }
-    async fn continue_sub_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn continue_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
         let mut task = self.task_repo.get_by_id(id).await?;
         if task.job_id != String::default() {
             self.job_scheduler.continue_job(&task.job_id).await?;
         }
         if task.status != TaskStatus::Completed || task.status != TaskStatus::Completing {
             task.status = TaskStatus::Queuing;
-            let _ = self.task_repo.update(task).await;
+            let _ = self.task_repo.update(&task).await;
             let task_files = self.task_file_repo.find_files_by_task(id).await?;
             for file in task_files {
                 if file.file_type == FileType::IN && file.status != FileStatus::Both {
@@ -121,11 +122,11 @@ impl SubTaskService for RunJobServiceImpl {
     async fn refresh_all_status(&self) -> anyhow::Result<()> {
         let tasks = self.task_repo.get_all_refreshable_task().await?;
         for task in tasks {
-            self.refresh_status(task.id.to_string().as_str()).await?;
+            self.refresh_status(task.id).await?;
         }
         Ok(())
     }
-    async fn refresh_status(&self, id: &str) -> anyhow::Result<()> {
+    async fn refresh_status(&self, id: Uuid) -> anyhow::Result<()> {
         let mut task = self.task_repo.get_by_id(id).await?;
         let job = self.job_scheduler.get_job(&task.job_id).await?;
         task.resource_used = Some(job.resource_used);
@@ -144,11 +145,11 @@ impl SubTaskService for RunJobServiceImpl {
                 "Job exit with {}\nError Output:\n{}",
                 job.exit_status_code, job.error_output
             );
-            self.task_repo.update(task).await?;
+            self.task_repo.update(&task).await?;
             self.task_repo.save_changed().await?;
             return self.report_service.report_failed_task(id).await;
         }
-        self.task_repo.update(task.clone()).await?;
+        self.task_repo.update(&task).await?;
         self.task_repo.save_changed().await?;
         let files = self.task_file_repo.find_files_by_task(id).await?;
         let files = files.iter().filter(|x| x.file_type == FileType::OUT);
@@ -166,7 +167,7 @@ impl SubTaskService for RunJobServiceImpl {
                 .await?;
             let mut file = file.clone();
             file.status = FileStatus::Uploading;
-            self.task_file_repo.update(file).await?;
+            self.task_file_repo.update(&file).await?;
         }
         self.task_file_repo.save_changed().await?;
         Ok(())
@@ -196,7 +197,7 @@ impl RunJobServiceImpl {
             deployers,
         }
     }
-    async fn internal_run_job(&self, id: &str) -> anyhow::Result<()> {
+    async fn internal_run_job(&self, id: Uuid) -> anyhow::Result<()> {
         let can_run = self
             .task_file_repo
             .find_files_by_task(id)
@@ -221,7 +222,7 @@ impl RunJobServiceImpl {
                                     task.status = TaskStatus::Failed;
                                     task.failed_reason =
                                         "Unabled to load software. No such software.".to_string();
-                                    self.task_repo.update(task).await?;
+                                    self.task_repo.update(&task).await?;
                                     self.task_repo.save_changed().await?;
                                     return self.report_service.report_failed_task(id).await;
                                 }
@@ -230,7 +231,7 @@ impl RunJobServiceImpl {
                         None => {
                             task.status = TaskStatus::Failed;
                             task.failed_reason = "Unabled to load software. Unable to access software package manager.".to_string();
-                            self.task_repo.update(task).await?;
+                            self.task_repo.update(&task).await?;
                             self.task_repo.save_changed().await?;
                             return self.report_service.report_failed_task(id).await;
                         }
@@ -247,7 +248,7 @@ impl RunJobServiceImpl {
                                     task.status = TaskStatus::Failed;
                                     task.failed_reason =
                                         "Unabled to load software. No such software.".to_string();
-                                    self.task_repo.update(task).await?;
+                                    self.task_repo.update(&task).await?;
                                     self.task_repo.save_changed().await?;
                                     return self.report_service.report_failed_task(id).await;
                                 }
@@ -257,7 +258,7 @@ impl RunJobServiceImpl {
                             task.status = TaskStatus::Failed;
                             task.failed_reason =
                                 "Unabled to load software. Unable to access software package manager.".to_string();
-                            self.task_repo.update(task).await?;
+                            self.task_repo.update(&task).await?;
                             self.task_repo.save_changed().await?;
                             return self.report_service.report_failed_task(id).await;
                         }
@@ -276,7 +277,7 @@ impl RunJobServiceImpl {
                     let info = ScriptInfo {
                         id: task.id.to_string(),
                         name,
-                        path: format!("{}/{}", task.parent_id.to_string().as_str(), "run.sh"),
+                        path: format!("{}/{}", task.parent_id, "run.sh"),
                         load_software,
                         arguments,
                         environments,
@@ -287,7 +288,7 @@ impl RunJobServiceImpl {
                     };
                     let job_id = self.job_scheduler.submit_job_script(info).await?;
                     task.job_id = job_id;
-                    let _ = self.task_repo.update(task).await?;
+                    self.task_repo.update(&task).await?;
                 }
                 _ => anyhow::bail!("Unable to build script info."),
             }
@@ -295,7 +296,7 @@ impl RunJobServiceImpl {
         self.task_file_repo.save_changed().await?;
         Ok(())
     }
-    async fn internal_complete_job(&self, id: &str) -> anyhow::Result<()> {
+    async fn internal_complete_job(&self, id: Uuid) -> anyhow::Result<()> {
         let can_run = self
             .task_file_repo
             .find_files_by_task(id)
@@ -312,24 +313,24 @@ impl RunJobServiceImpl {
 
 #[async_trait::async_trait]
 impl RunJobService for RunJobServiceImpl {
-    async fn run_job(&self, id: &str) -> anyhow::Result<()> {
+    async fn run_job(&self, id: Uuid) -> anyhow::Result<()> {
         let task_file = self.task_file_repo.get_by_id(id).await?;
         self.task_file_repo.update_task_file_status(id, FileStatus::Both).await?;
         self.task_file_repo.save_changed().await?;
-        self.internal_run_job(task_file.related_task_body.to_string().as_str()).await
+        self.internal_run_job(task_file.related_task_body).await
     }
-    async fn complete_job(&self, id: &str) -> anyhow::Result<()> {
+    async fn complete_job(&self, id: Uuid) -> anyhow::Result<()> {
         let task_file = self.task_file_repo.get_by_id(id).await?;
         self.task_file_repo.update_task_file_status(id, FileStatus::Both).await?;
         self.task_file_repo.save_changed().await?;
-        self.internal_complete_job(task_file.related_task_body.to_string().as_str())
+        self.internal_complete_job(task_file.related_task_body)
             .await
     }
-    async fn fail_job(&self, id: &str, reason: &str) -> anyhow::Result<()> {
+    async fn fail_job(&self, id: Uuid, reason: &str) -> anyhow::Result<()> {
         let mut task = self.task_repo.get_by_id(id).await?;
         task.status = TaskStatus::Failed;
         task.failed_reason = reason.to_string();
-        self.task_repo.update(task).await?;
+        self.task_repo.update(&task).await?;
         self.task_repo.save_changed().await?;
         return self.report_service.report_failed_task(id).await;
     }

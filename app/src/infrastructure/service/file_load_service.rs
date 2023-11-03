@@ -44,9 +44,9 @@ pub struct FileLoadServiceImpl {
 
 #[async_trait::async_trait]
 impl FileLoadService for FileLoadServiceImpl {
-    async fn load_file(&self, parent_id: &str, from: &CollectFrom) -> anyhow::Result<String> {
+    async fn load_file(&self, parent_id: Uuid, from: &CollectFrom) -> anyhow::Result<String> {
         let Some(scp) = &self.scp else {
-            let mut p = self.base_path.join(parent_id);
+            let mut p = self.base_path.join(parent_id.to_string());
             return match from {
                 CollectFrom::FileOut { path } => {
                     p.push(path);
@@ -65,8 +65,8 @@ impl FileLoadService for FileLoadServiceImpl {
         };
 
         let ssh = scp.config();
-        let mut p = PathBuf::from_iter([&ssh.home_dir, &ssh.save_dir, parent_id]);
-        let mut p_local = self.base_path.join(parent_id);
+        let mut p = PathBuf::from_iter([&ssh.home_dir, &ssh.save_dir, &parent_id.to_string()]);
+        let mut p_local = self.base_path.join(parent_id.to_string());
         match from {
             CollectFrom::FileOut { path } => {
                 p.push(path);

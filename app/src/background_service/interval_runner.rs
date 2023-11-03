@@ -1,4 +1,4 @@
-use alice_architecture::hosting::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use domain::service::{RunJobService, TaskSchedulerService};
 use std::time::Duration;
 use tokio::time::interval;
@@ -11,7 +11,7 @@ pub struct IntervalRunner {
 }
 
 #[async_trait::async_trait]
-impl IBackgroundService for IntervalRunner {
+impl BackgroundService for IntervalRunner {
     async fn run(&self) {
         let mut interval = interval(self.interval);
         loop {

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use alice_architecture::hosting::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use anyhow::Context;
 use domain::{
     command::FileTransferCommand, model::vo::FileTransferStatus, sender::IDownloadSender,
@@ -51,7 +51,7 @@ pub struct StartRoutine {
 }
 
 #[async_trait::async_trait]
-impl IBackgroundService for FileDownloadRunner {
+impl BackgroundService for FileDownloadRunner {
     async fn run(&self) {
         loop {
             match self.receiver.recv_async().await {
@@ -131,7 +131,7 @@ impl StartRoutine {
         let task = async {
             let mut path = PathBuf::new();
             path.push(save_dir.as_str());
-            path.push(command.parent_id.to_string().as_str());
+            path.push(command.parent_id.to_string());
             path.push(task_file.file_name.as_str());
             if !path.exists() {
                 tracing::trace!(
@@ -275,7 +275,7 @@ impl StartRoutine {
                                     if !x.success() {
                                         run_task
                                             .fail_job(
-                                                &task_file.related_task_body.to_string(),
+                                                task_file.related_task_body,
                                                 &format!(
                                                     "Unable to download file {}, because of ssh transport not success.",
                                                     task_file.metadata_id
@@ -286,7 +286,7 @@ impl StartRoutine {
                                 Err(e) => {
                                     run_task
                                         .fail_job(
-                                            &task_file.related_task_body.to_string(),
+                                            task_file.related_task_body,
                                             &format!(
                                                 "Unable to download file {}, because of {e}",
                                                 task_file.metadata_id
@@ -297,7 +297,7 @@ impl StartRoutine {
                             Err(e) => {
                                 run_task
                                     .fail_job(
-                                        &task_file.related_task_body.to_string(),
+                                        task_file.related_task_body,
                                         &format!(
                                             "Unable to download file {}, because of {e}",
                                             task_file.metadata_id
@@ -320,7 +320,7 @@ impl StartRoutine {
                     };
                     tokio::time::sleep(Duration::from_millis(sleep_time)).await;
 
-                    run_task.run_job(&task_file.id.to_string()).await?;
+                    run_task.run_job(task_file.id).await?;
 
                     Ok(())
                 }
@@ -328,7 +328,7 @@ impl StartRoutine {
                     tracing::error!("{e}");
                     run_task
                         .fail_job(
-                            &task_file.related_task_body.to_string(),
+                            task_file.related_task_body,
                             &format!(
                                 "Unable to download file {}, because of {e}",
                                 task_file.metadata_id

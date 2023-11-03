@@ -7,7 +7,7 @@ mod login;
 use std::sync::Arc;
 use std::time::Duration;
 
-use alice_architecture::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use alice_di::IServiceProvider;
 use alice_infrastructure::config::build_config;
 use alice_infrastructure::config::CommonConfig;
@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| "Login failed".red())?;
 
     let common_config: CommonConfig = config.get("common").unwrap_or_default();
-    alice_infrastructure::telemetry::initialize_telemetry(common_config.telemetry())
+    alice_infrastructure::telemetry::initialize_telemetry(&common_config.telemetry)
         .with_context(|| "Failed to initialize logger".red())?;
 
     let sp = async {
@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     .with_context(|| "Cannot build Service Provider".red())?;
 
-    let tasks: Vec<Arc<dyn IBackgroundService + Send + Sync>> = sp.provide();
+    let tasks: Vec<Arc<dyn BackgroundService + Send + Sync>> = sp.provide();
     let handles: Vec<_> = tasks
         .into_iter()
         .map(|task| tokio::spawn(async move { task.run().await }))

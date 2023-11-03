@@ -1,7 +1,8 @@
-use alice_architecture::hosting::IBackgroundService;
+use alice_architecture::background_service::BackgroundService;
 use domain::{sender::ISubTaskReportService, service::TaskSchedulerService};
 use std::sync::Arc;
 use tracing::Instrument;
+use uuid::Uuid;
 
 pub struct TaskSchedulerRunner {
     receiver: flume::Receiver<SubTaskReport>,
@@ -9,7 +10,7 @@ pub struct TaskSchedulerRunner {
 }
 
 #[async_trait::async_trait]
-impl IBackgroundService for TaskSchedulerRunner {
+impl BackgroundService for TaskSchedulerRunner {
     async fn run(&self) {
         loop {
             let scheduler_task = self.scheduler_task.clone();
@@ -21,7 +22,7 @@ impl IBackgroundService for TaskSchedulerRunner {
                             let scheduler_task = scheduler_task.clone();
                             match report.status {
                                 SubTaskStatus::Completed => {
-                                    match scheduler_task.complete_sub_task(&report.id).await {
+                                    match scheduler_task.complete_sub_task(report.id).await {
                                         Ok(()) => tracing::debug!(
                                             "Sub-task {} is reported to complete.",
                                             report.id
@@ -30,7 +31,7 @@ impl IBackgroundService for TaskSchedulerRunner {
                                     }
                                 }
                                 SubTaskStatus::Failed => {
-                                    match scheduler_task.fail_sub_task(&report.id).await {
+                                    match scheduler_task.fail_sub_task(report.id).await {
                                         Ok(()) => tracing::debug!(
                                             "Sub-task {} is reported to fail.",
                                             report.id
@@ -63,7 +64,7 @@ impl TaskSchedulerRunner {
 
 #[derive(Clone)]
 pub struct SubTaskReport {
-    pub id: String,
+    pub id: Uuid,
     pub status: SubTaskStatus,
 }
 
@@ -80,20 +81,20 @@ pub struct SubTaskReportService {
 
 #[async_trait::async_trait]
 impl ISubTaskReportService for SubTaskReportService {
-    async fn report_completed_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn report_completed_task(&self, id: Uuid) -> anyhow::Result<()> {
         Ok(self
             .sender
             .send_async(SubTaskReport {
-                id: id.to_string(),
+                id,
                 status: SubTaskStatus::Completed,
             })
             .await?)
     }
-    async fn report_failed_task(&self, id: &str) -> anyhow::Result<()> {
+    async fn report_failed_task(&self, id: Uuid) -> anyhow::Result<()> {
         Ok(self
             .sender
             .send_async(SubTaskReport {
-                id: id.to_string(),
+                id,
                 status: SubTaskStatus::Failed,
             })
             .await?)

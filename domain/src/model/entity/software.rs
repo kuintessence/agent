@@ -1,7 +1,7 @@
-use alice_architecture::IAggregateRoot;
+use alice_architecture::model::derive::AggregateRoot;
 use serde::{Deserialize, Serialize};
 
-#[derive(Default, Deserialize, Serialize, Clone, Eq, Debug, IAggregateRoot)]
+#[derive(Default, Deserialize, Serialize, Clone, Eq, Debug, AggregateRoot)]
 pub struct SoftwareInstallOptions {
     pub parameters: Vec<String>,
     pub version: String,

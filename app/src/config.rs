@@ -1,7 +1,10 @@
+use alice_infrastructure::config::CommonConfig;
 use serde::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct AgentConfig {
+    #[serde(default, flatten)]
+    pub common: CommonConfig,
     #[serde(default = "AgentConfig::default_report_url")]
     pub report_url: String,
     #[serde(default = "AgentConfig::default_save_path")]
@@ -26,7 +29,7 @@ pub struct AgentConfig {
     pub login: LoginConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SchedulerConfig {
     #[serde(default = "SchedulerConfig::default_type")]
     pub r#type: String,
@@ -34,7 +37,7 @@ pub struct SchedulerConfig {
     pub queue: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct SshProxyConfig {
     pub host: String,
     pub username: String,
@@ -46,7 +49,7 @@ pub struct SshProxyConfig {
     pub save_dir: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct LoginConfig {
     pub url: String,
     pub client_id: String,
@@ -56,6 +59,7 @@ pub struct LoginConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
+            common: Default::default(),
             report_url: Self::default_report_url(),
             save_path: Self::default_save_path(),
             include_env_script_path: Self::default_include_env_script_path(),
