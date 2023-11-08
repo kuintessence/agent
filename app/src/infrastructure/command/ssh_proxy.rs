@@ -2,12 +2,6 @@ use tokio::process::Command;
 
 use crate::config::SshProxyConfig;
 
-/// An ssh proxy for command. It's transparent if not using ssh.
-#[derive(Debug)]
-pub struct SshProxy {
-    ssh: Option<SshConfig>,
-}
-
 #[derive(Debug, Clone)]
 pub struct SshConfig {
     pub port: String,
@@ -16,33 +10,18 @@ pub struct SshConfig {
     pub save_dir: String,
 }
 
-impl SshProxy {
-    pub fn new(ssh_config: &Option<SshProxyConfig>) -> Self {
-        let Some(SshProxyConfig {
-            host,
-            username,
-            port,
-            home_dir,
-            save_dir,
-        }) = ssh_config
-        else {
-            return Self { ssh: None };
-        };
+/// An ssh proxy for command. It's transparent if not using ssh.
+pub trait MaybeSsh {
+    fn command(&self, cmd: &str) -> Command;
+    fn is_ssh(&self) -> bool;
+}
 
-        Self {
-            ssh: Some(SshConfig {
-                port: port.to_string(),
-                username_host: format!("{username}@{host}"),
-                home_dir: home_dir.clone(),
-                save_dir: save_dir.clone(),
-            }),
-        }
-    }
-
-    /// Return the command over ssh if using ssh,
-    /// or return `Command::new(cmd)` directly.
-    pub fn command(&self, cmd: &str) -> Command {
-        let Some(ssh) = &self.ssh else {
+impl<Ctx> MaybeSsh for Ctx
+where
+    Ctx: AsRef<Option<SshConfig>>,
+{
+    fn command(&self, cmd: &str) -> Command {
+        let Some(ssh) = self.as_ref() else {
             return Command::new(cmd);
         };
 
@@ -51,14 +30,26 @@ impl SshProxy {
         command
     }
 
-    #[inline]
-    pub fn is_proxy(&self) -> bool {
-        self.ssh.is_some()
+    fn is_ssh(&self) -> bool {
+        self.as_ref().is_some()
     }
+}
 
-    /// Return the ssh `port` and `<username>@<host>` if using ssh proxy
-    #[inline]
-    pub fn config(&self) -> Option<&SshConfig> {
-        self.ssh.as_ref()
+impl SshConfig {
+    pub fn new(config: &SshProxyConfig) -> Self {
+        let SshProxyConfig {
+            host,
+            username,
+            port,
+            home_dir,
+            save_dir,
+        } = config;
+
+        Self {
+            port: port.to_string(),
+            username_host: format!("{username}@{host}"),
+            home_dir: home_dir.clone(),
+            save_dir: save_dir.clone(),
+        }
     }
 }

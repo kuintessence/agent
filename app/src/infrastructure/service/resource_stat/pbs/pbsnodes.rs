@@ -34,7 +34,7 @@ pub struct SumResources {
 }
 
 impl<N> Status<N> {
-    pub const ARGS: &[&'static str] = &["-a", "-F", "json"];
+    pub const ARGS: &'static [&'static str] = &["-a", "-F", "json"];
 
     #[inline]
     pub fn new(s: &[u8]) -> serde_json::Result<Self>

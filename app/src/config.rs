@@ -1,38 +1,53 @@
 use alice_infrastructure::config::CommonConfig;
+use bytesize::ByteSize;
 use serde::*;
+use url::Url;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentConfig {
     #[serde(default, flatten)]
     pub common: CommonConfig,
-    #[serde(default = "AgentConfig::default_report_url")]
-    pub report_url: String,
+
+    pub server: Url,
+
+    pub oidc_server: Url,
+
+    #[serde(default = "AgentConfig::default_upload_part_size")]
+    pub upload_part_size: ByteSize,
+
+    #[serde(default = "AgentConfig::default_download_part_size")]
+    pub download_part_size: ByteSize,
+
+    #[serde(default = "AgentConfig::default_refresh_jobs_interval")]
+    pub refresh_jobs_interval: u64,
+
     #[serde(default = "AgentConfig::default_save_path")]
     pub save_path: String,
+
     #[serde(default = "AgentConfig::default_save_path")]
     pub container_save_path: String,
+
     #[serde(default = "AgentConfig::default_include_env_script_path")]
     pub include_env_script_path: String,
+
     #[serde(default = "Default::default")]
     pub include_env_script: String,
-    #[serde(default = "Default::default")]
-    pub watch_interval: u64,
-    #[serde(default = "Default::default")]
-    pub upload_base_url: String,
-    #[serde(default = "Default::default")]
-    pub download_base_url: String,
+
     #[serde(default = "Default::default")]
     pub scheduler: SchedulerConfig,
+
     #[serde(default = "Default::default")]
     pub ssh_proxy: Option<SshProxyConfig>,
-    #[serde(default = "Default::default")]
-    pub login: LoginConfig,
+
+    #[serde(default = "AgentConfig::default_client_id")]
+    pub client_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SchedulerConfig {
     #[serde(default = "SchedulerConfig::default_type")]
     pub r#type: String,
+
     #[serde(default = "Default::default")]
     pub queue: Option<String>,
 }
@@ -40,56 +55,47 @@ pub struct SchedulerConfig {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SshProxyConfig {
     pub host: String,
+
     pub username: String,
+
     #[serde(default = "SshProxyConfig::default_port")]
     pub port: u16,
+
     #[serde(default = "SshProxyConfig::default_home_dir")]
     pub home_dir: String,
+
     #[serde(default = "SshProxyConfig::default_save_dir")]
     pub save_dir: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct LoginConfig {
-    pub url: String,
     pub client_id: String,
-    pub token_url: String,
-}
-
-impl Default for AgentConfig {
-    fn default() -> Self {
-        Self {
-            common: Default::default(),
-            report_url: Self::default_report_url(),
-            save_path: Self::default_save_path(),
-            include_env_script_path: Self::default_include_env_script_path(),
-            include_env_script: Default::default(),
-            watch_interval: Self::default_watch_interval(),
-            upload_base_url: Self::default_upload_base_url(),
-            download_base_url: Self::default_upload_base_url(),
-            container_save_path: Self::default_save_path(),
-            scheduler: Default::default(),
-            ssh_proxy: Default::default(),
-            login: Default::default(),
-        }
-    }
 }
 
 impl AgentConfig {
-    pub fn default_report_url() -> String {
-        "http://localhost/report".to_string()
+    pub fn default_upload_part_size() -> ByteSize {
+        ByteSize::kib(4)
     }
+
+    pub fn default_download_part_size() -> ByteSize {
+        ByteSize::mib(16)
+    }
+
     pub fn default_save_path() -> String {
-        ".".to_string()
+        ".".to_owned()
     }
+
     pub fn default_include_env_script_path() -> String {
-        "included.sh".to_string()
+        "included.sh".to_owned()
     }
-    pub fn default_watch_interval() -> u64 {
-        300
+
+    pub fn default_client_id() -> String {
+        "device".to_owned()
     }
-    pub fn default_upload_base_url() -> String {
-        "http://localhost/upload".to_string()
+
+    pub fn default_refresh_jobs_interval() -> u64 {
+        60
     }
 }
 
@@ -104,7 +110,7 @@ impl Default for SchedulerConfig {
 
 impl SchedulerConfig {
     pub fn default_type() -> String {
-        "slurm".to_string()
+        "slurm".to_owned()
     }
 }
 
@@ -124,10 +130,12 @@ impl SshProxyConfig {
     pub fn default_port() -> u16 {
         22
     }
+
     pub fn default_home_dir() -> String {
-        "~".to_string()
+        "~".to_owned()
     }
+
     pub fn default_save_dir() -> String {
-        "agent/tasks".to_string()
+        "agent/tasks".to_owned()
     }
 }

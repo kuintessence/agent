@@ -7,78 +7,62 @@ mod login;
 use std::sync::Arc;
 use std::time::Duration;
 
-use alice_architecture::background_service::BackgroundService;
-use alice_di::IServiceProvider;
 use alice_infrastructure::config::build_config;
-use alice_infrastructure::config::CommonConfig;
 use anyhow::Context;
 use colored::Colorize;
-use url::Url;
 
+use self::background_service::prelude::*;
 use self::config::AgentConfig;
-use self::infrastructure::{
-    command::SshProxy,
-    http::{authorization::JwtPayload, middleware::AuthMiddleware},
-    service::{keycloak::GrantInfo, resource_stat::ResourceStat},
-    service_provider::ServiceProvider,
-};
+use self::infrastructure::http::authorization::JwtPayload;
+use self::infrastructure::ioc::Container;
+use self::infrastructure::service::keycloak::GrantInfo;
 
 #[tokio::main(worker_threads = 32)]
 async fn main() -> anyhow::Result<()> {
     let config = build_config().with_context(|| "Failed to build config".red())?;
-    let agent_config: AgentConfig = config.get("agent")?;
-    let ssh_proxy = Arc::new(SshProxy::new(&agent_config.ssh_proxy));
-
-    let resource_stat = ResourceStat::new(&agent_config.scheduler.r#type, ssh_proxy.clone())
-        .with_context(|| format!("Unsupported scheduler: {}", &agent_config.scheduler.r#type))?;
+    let agent_config: AgentConfig = config.try_deserialize()?;
 
     // Don't log before login because it will break the login interface
     let GrantInfo {
         access_token,
         refresh_token,
-    } = login::go(&agent_config, &resource_stat)
-        .await
-        .with_context(|| "Login failed".red())?;
+    } = login::go(&agent_config).await.with_context(|| "Login failed".red())?;
 
-    let common_config: CommonConfig = config.get("common").unwrap_or_default();
-    alice_infrastructure::telemetry::initialize_telemetry(&common_config.telemetry)
+    alice_infrastructure::telemetry::init_telemetry(&agent_config.common.telemetry)
         .with_context(|| "Failed to initialize logger".red())?;
 
-    let sp = async {
-        let token_url: Url = agent_config.login.token_url.parse()?;
-        let auth_middleware = AuthMiddleware::new(
-            token_url.clone(),
-            &agent_config.login.client_id,
-            &access_token,
-            refresh_token,
-            Duration::from_secs(1),
-        );
+    let container = Arc::new(
+        Container::new(&agent_config, &access_token, refresh_token)
+            .await
+            .with_context(|| "Cannot build IOC container".red())?,
+    );
+
+    let background_services = async {
         let topic = JwtPayload::from_token(&access_token)?.preferred_username;
-        Result::<_, anyhow::Error>::Ok(Arc::new(
-            ServiceProvider::build(
-                config,
-                ssh_proxy,
-                Arc::new(auth_middleware),
-                topic,
-                Arc::new(resource_stat),
-            )
-            .await?,
-        ))
+        let mq =
+            KafkaMessageQueue::new(container.clone(), &agent_config.common.mq, [topic]).await?;
+
+        let resource_reporter =
+            ResourceReporter::new(container.clone(), agent_config.server.clone());
+
+        let refresh_jobs_interval = Duration::from_secs(agent_config.refresh_jobs_interval.max(5));
+
+        let background_services = [
+            tokio::spawn(async move { mq.run().await }),
+            tokio::spawn(async move { resource_reporter.run().await }),
+            tokio::spawn(refresh_jobs(container.clone(), refresh_jobs_interval)),
+        ];
+        tracing::info!("COS Agent Started");
+
+        Result::<_, anyhow::Error>::Ok(background_services)
     }
     .await
-    .with_context(|| "Cannot build Service Provider".red())?;
+    .with_context(|| "Cannot setup background services".red())?;
 
-    let tasks: Vec<Arc<dyn BackgroundService + Send + Sync>> = sp.provide();
-    let handles: Vec<_> = tasks
-        .into_iter()
-        .map(|task| tokio::spawn(async move { task.run().await }))
-        .collect();
-    tracing::info!("COS Agent Started.");
     tokio::signal::ctrl_c().await.unwrap();
     tracing::info!("Stoping Services (ctrl-c handling).");
-    for handle in handles {
+    for handle in background_services {
         handle.abort();
     }
-
     Ok(())
 }

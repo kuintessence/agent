@@ -1,14 +1,12 @@
-pub mod collection_task;
+pub mod collect_output;
 pub mod deploy_software;
-pub mod run_job;
-pub mod task_scheduler;
+pub mod job;
 
 pub mod prelude {
     #[rustfmt::skip]
     pub use super::{
-        collection_task::CollectionTaskServiceImpl,
-        deploy_software::DeploySoftwareServiceImpl,
-        run_job::RunJobServiceImpl,
-        task_scheduler::TaskSchedulerServiceImpl,
+        collect_output::{CollectOutputService, CollectOutputState},
+        deploy_software::{DeploySoftwareService, DeploySoftwareState},
+        job::{JobServiceImpl, JobServiceState},
     };
 }

@@ -1,260 +1,120 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
+use anyhow::Context;
+use dep_inj::DepInj;
 use domain::{
-    command::SoftwareDeploymentCommand,
-    model::{
-        entity::{
-            task::{DeployerType, FacilityKind, TaskStatus},
-            SubTask,
-        },
-        vo::TaskDisplayType,
-    },
-    repository::ISubTaskRepository,
-    sender::{ISoftwareDeploymentSender, ISubTaskReportService},
-    service::{DeploySoftwareService, SoftwareDeployerService, SubTaskService},
+    model::entity::task::{deploy_software::*, Task, TaskStatus},
+    service::{SelectSoftwareDeployer, TaskService, TaskStatusReporter},
 };
+use tokio::sync::{Mutex, Semaphore};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-pub struct DeploySoftwareServiceImpl {
-    sub_task_repo: Arc<dyn ISubTaskRepository + Send + Sync>,
-    report_service: Arc<dyn ISubTaskReportService>,
-    sender: Arc<dyn ISoftwareDeploymentSender + Send + Sync>,
-    deployers: HashMap<DeployerType, Arc<dyn SoftwareDeployerService>>,
+#[derive(DepInj)]
+#[target(DeploySoftwareService)]
+pub struct DeploySoftwareState {
+    start_guard: Semaphore,
+    cancel_map: Mutex<HashMap<Uuid, CancellationToken>>,
 }
 
-#[async_trait::async_trait]
-impl SubTaskService for DeploySoftwareServiceImpl {
-    async fn enqueue_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
-        let sub_task = self.sub_task_repo.get_by_id(id).await?;
-        self.sender
-            .send(SoftwareDeploymentCommand {
-                id: sub_task.id,
-                task_status: TaskStatus::Running,
-            })
-            .await?;
-        self.sub_task_repo
-            .update(&SubTask {
-                status: TaskStatus::Running,
-                ..sub_task
-            })
-            .await?;
-        self.sub_task_repo.save_changed().await?;
-        Ok(())
-    }
-    async fn delete_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
-        let sub_task = self.sub_task_repo.get_by_id(id).await?;
-        self.sender
-            .send(SoftwareDeploymentCommand {
-                id: sub_task.id,
-                task_status: TaskStatus::Suspended,
-            })
-            .await?;
-        self.sub_task_repo.delete_by_id(id).await?;
-        self.sub_task_repo.save_changed().await?;
-        Ok(())
-    }
-    async fn pause_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
-        let sub_task = self.sub_task_repo.get_by_id(id).await?;
-        self.sender
-            .send(SoftwareDeploymentCommand {
-                id: sub_task.id,
-                task_status: TaskStatus::Suspended,
-            })
-            .await?;
-        self.sub_task_repo
-            .update(&SubTask {
-                status: TaskStatus::Suspended,
-                ..sub_task
-            })
-            .await?;
-        self.sub_task_repo.save_changed().await?;
-        Ok(())
-    }
-    async fn continue_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
-        self.enqueue_sub_task(id).await
-    }
-    async fn refresh_all_status(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-    async fn refresh_status(&self, _id: Uuid) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn get_task_type(&self) -> TaskDisplayType {
-        TaskDisplayType::SoftwareDeployment
+impl DeploySoftwareState {
+    pub fn new(permits: usize) -> Self {
+        Self {
+            start_guard: Semaphore::new(permits),
+            cancel_map: Mutex::default(),
+        }
     }
 }
 
 #[async_trait::async_trait]
-impl DeploySoftwareService for DeploySoftwareServiceImpl {
-    async fn complete_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
-        let sub_task = self.sub_task_repo.get_by_id(id).await?;
-        self.sub_task_repo
-            .update(&SubTask {
-                status: TaskStatus::Completed,
-                ..sub_task
-            })
-            .await?;
-        self.sub_task_repo.save_changed().await?;
-        self.report_service.report_completed_task(id).await
+impl<Deps> TaskService for DeploySoftwareService<Deps>
+where
+    Deps: AsRef<DeploySoftwareState>
+        + TaskStatusReporter<DeploySoftware>
+        + SelectSoftwareDeployer
+        + Send
+        + Sync,
+{
+    type Body = DeploySoftware;
+
+    async fn start(&self, task: Task<Self::Body>) -> anyhow::Result<()> {
+        let id = task.id;
+        self.prj_ref().report(id, TaskStatus::Queued).await?;
+
+        let cancel_token = CancellationToken::new();
+        self.cancel_map.lock().await.insert(id, cancel_token.clone());
+
+        tokio::select! {
+            res = self.run(task) => {
+                self.cancel_map.lock().await.remove(&id);
+                if let Err(e) = res {
+                    tracing::error!(task_id = %id, "Deploy software: {e}");
+                    self.prj_ref().report_msg(id, TaskStatus::Failed, &e.to_string()).await?;
+
+                } else {
+                    self.prj_ref().report(id, TaskStatus::Completed).await?;
+                }
+            },
+            _ = cancel_token.cancelled() => (),
+        }
+
+        Ok(())
     }
-    async fn fail_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
-        let sub_task = self.sub_task_repo.get_by_id(id).await?;
-        self.sub_task_repo
-            .update(&SubTask {
-                status: TaskStatus::Failed,
-                ..sub_task
-            })
-            .await?;
-        self.sub_task_repo.save_changed().await?;
-        self.report_service.report_failed_task(id).await
+
+    async fn pause(&self, _id: Uuid) -> anyhow::Result<()> {
+        Ok(())
     }
-    async fn run_sub_task(&self, id: Uuid) -> anyhow::Result<()> {
-        let sub_task = self.sub_task_repo.get_by_id(id).await?;
-        match &sub_task.facility_kind {
+
+    async fn resume(&self, _id: Uuid) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn cancel(&self, id: Uuid) -> anyhow::Result<()> {
+        let cancel_token = self.cancel_map.lock().await.remove(&id).context("Task not found")?;
+        cancel_token.cancel();
+
+        self.prj_ref().report(id, TaskStatus::Cancelled).await
+    }
+}
+
+impl<Deps> DeploySoftwareService<Deps>
+where
+    Deps: AsRef<DeploySoftwareState>
+        + TaskStatusReporter<DeploySoftware>
+        + SelectSoftwareDeployer
+        + Send
+        + Sync,
+{
+    async fn run(&self, task: Task<DeploySoftware>) -> anyhow::Result<()> {
+        // controling the numbers of running task via semaphore
+        let _running = self.start_guard.acquire().await?;
+        self.prj_ref().report(task.id, TaskStatus::Started).await?;
+
+        match task.body.facility_kind {
             FacilityKind::Spack {
                 name,
                 argument_list,
-            } => match self.deployers.get(&DeployerType::Spack) {
-                Some(x) => {
-                    if let Ok(Some(_)) = x.find_installed_hash(name, argument_list).await {
-                        self.sender
-                            .send(SoftwareDeploymentCommand {
-                                id: sub_task.id,
-                                task_status: TaskStatus::Completing,
-                            })
-                            .await?;
-                        return Ok(());
-                    }
-                    match x.install(name, argument_list.clone()).await {
-                        Ok(_) => {
-                            self.sender
-                                .send(SoftwareDeploymentCommand {
-                                    id: sub_task.id,
-                                    task_status: TaskStatus::Completing,
-                                })
-                                .await
-                        }
-                        Err(e) => {
-                            self.sub_task_repo
-                                .update(&SubTask {
-                                    failed_reason: format!("{e}"),
-                                    ..sub_task
-                                })
-                                .await?;
-                            self.sub_task_repo.save_changed().await?;
-                            self.sender
-                                .send(SoftwareDeploymentCommand {
-                                    id: sub_task.id,
-                                    task_status: TaskStatus::Failed,
-                                })
-                                .await
-                        }
-                    }
-                }
-                None => {
-                    self.sub_task_repo
-                        .update(&SubTask {
-                            failed_reason: "No such package manager.".to_string(),
-                            ..sub_task
-                        })
-                        .await?;
-                    self.sub_task_repo.save_changed().await?;
-                    self.sender
-                        .send(SoftwareDeploymentCommand {
-                            id: sub_task.id,
-                            task_status: TaskStatus::Failed,
-                        })
-                        .await
-                }
-            },
-            FacilityKind::Singularity { image, tag } => {
-                match self.deployers.get(&DeployerType::Apptainer) {
-                    Some(x) => {
-                        let tag = vec![tag.clone()];
-                        if let Ok(Some(_)) = x.find_installed_hash(image, &tag).await {
-                            self.sender
-                                .send(SoftwareDeploymentCommand {
-                                    id: sub_task.id,
-                                    task_status: TaskStatus::Completing,
-                                })
-                                .await?;
-                            return Ok(());
-                        }
-                        match x.install(image, tag).await {
-                            Ok(_) => {
-                                self.sender
-                                    .send(SoftwareDeploymentCommand {
-                                        id: sub_task.id,
-                                        task_status: TaskStatus::Completing,
-                                    })
-                                    .await
-                            }
-                            Err(e) => {
-                                self.sub_task_repo
-                                    .update(&SubTask {
-                                        failed_reason: format!("{e}"),
-                                        ..sub_task
-                                    })
-                                    .await?;
-                                self.sub_task_repo.save_changed().await?;
-                                self.sender
-                                    .send(SoftwareDeploymentCommand {
-                                        id: sub_task.id,
-                                        task_status: TaskStatus::Failed,
-                                    })
-                                    .await
-                            }
-                        }
-                    }
-                    None => {
-                        self.sub_task_repo
-                            .update(&SubTask {
-                                failed_reason: "No such package manager.".to_string(),
-                                ..sub_task
-                            })
-                            .await?;
-                        self.sub_task_repo.save_changed().await?;
-                        self.sender
-                            .send(SoftwareDeploymentCommand {
-                                id: sub_task.id,
-                                task_status: TaskStatus::Failed,
-                            })
-                            .await
-                    }
-                }
-            }
-            _ => {
-                self.sub_task_repo
-                    .update(&SubTask {
-                        failed_reason: "No such package manager.".to_string(),
-                        ..sub_task
-                    })
-                    .await?;
-                self.sub_task_repo.save_changed().await?;
-                self.sender
-                    .send(SoftwareDeploymentCommand {
-                        id: sub_task.id,
-                        task_status: TaskStatus::Failed,
-                    })
-                    .await
-            }
-        }
-    }
-}
+            } => {
+                let deployer = self.prj_ref().select(DeployerType::Spack);
 
-impl DeploySoftwareServiceImpl {
-    pub fn new(
-        sub_task_repo: Arc<dyn ISubTaskRepository + Send + Sync>,
-        report_service: Arc<dyn ISubTaskReportService>,
-        sender: Arc<dyn ISoftwareDeploymentSender + Send + Sync>,
-        deployers: HashMap<DeployerType, Arc<dyn SoftwareDeployerService>>,
-    ) -> Self {
-        Self {
-            sub_task_repo,
-            report_service,
-            sender,
-            deployers,
-        }
+                if let Ok(Some(_)) = deployer.find_installed_hash(&name, &argument_list).await {
+                    return Ok(());
+                }
+
+                deployer.install(&name, argument_list).await?;
+            }
+            FacilityKind::Singularity { image, tag } => {
+                let deployer = self.prj_ref().select(DeployerType::Apptainer);
+
+                let tag = vec![tag];
+                if let Ok(Some(_)) = deployer.find_installed_hash(&image, &tag).await {
+                    return Ok(());
+                }
+
+                deployer.install(&image, tag).await?;
+            }
+        };
+
+        Ok(())
     }
 }

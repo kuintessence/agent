@@ -2,6 +2,7 @@ use std::future::Future;
 
 use chrono::Utc;
 use reqwest::{Response, StatusCode};
+use reqwest_middleware::ClientWithMiddleware;
 use reqwest_retry::{
     default_on_request_failure, default_on_request_success, RetryPolicy, Retryable,
     RetryableStrategy,
@@ -41,18 +42,20 @@ impl RetryableStrategy for RetryOnError {
 /// [`Request`]: reqwest::Request
 /// [`RequestBuilder::multipart`]: reqwest::RequestBuilder::multipart
 /// [`Body::wrap_stream`]: reqwest::Body::wrap_stream
-pub struct RetryStreamRequest<T, R> {
+pub struct RetryStreamClient<T, R> {
+    base: ClientWithMiddleware,
     retry_policy: T,
     retryable_strategy: R,
 }
 
-impl<T, R> RetryStreamRequest<T, R>
+impl<T, R> RetryStreamClient<T, R>
 where
     T: RetryPolicy,
     R: RetryableStrategy,
 {
-    pub fn new(retry_policy: T, retryable_strategy: R) -> Self {
+    pub fn new(client: ClientWithMiddleware, retry_policy: T, retryable_strategy: R) -> Self {
         Self {
+            base: client,
             retry_policy,
             retryable_strategy,
         }
@@ -61,14 +64,14 @@ where
     /// This function will try to execute the request, if it fails
     /// with an error classified as transient it will call itself
     /// to retry the request.
-    pub async fn execute<F, Res>(&self, send: F) -> reqwest_middleware::Result<Response>
+    pub async fn execute<'a, F, Res>(&'a self, send: F) -> reqwest_middleware::Result<Response>
     where
-        F: Fn() -> Res,
+        F: Fn(&'a ClientWithMiddleware) -> Res,
         Res: Future<Output = reqwest_middleware::Result<Response>>,
     {
         let mut n_past_retries = 0;
         loop {
-            let result = send().await;
+            let result = send(&self.base).await;
 
             // We classify the response which will return None if not
             // errors were returned.

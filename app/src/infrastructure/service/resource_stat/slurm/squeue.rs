@@ -23,7 +23,7 @@ pub enum JobState {
 }
 
 impl Status {
-    pub const ARGS: &[&'static str] = &[
+    pub const ARGS: &'static [&'static str] = &[
         "-h",
         "-t",
         "'pending,running,suspended'",

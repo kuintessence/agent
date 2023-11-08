@@ -12,7 +12,7 @@ use typed_builder::TypedBuilder;
 #[rustfmt::skip]
 pub use self::{
     authorization::AuthMiddleware,
-    retry::{RetryOnError, RetryStreamRequest},
+    retry::{RetryOnError, RetryStreamClient},
     timeout::TimeoutMiddleware,
 };
 

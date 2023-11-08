@@ -1,28 +1,32 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use alice_architecture::background_service::BackgroundService;
 use reqwest_middleware::ClientWithMiddleware;
 use tokio::time::sleep;
-use typed_builder::TypedBuilder;
 use url::Url;
 
+use crate::infrastructure::ioc::Container;
 use crate::infrastructure::service::resource_stat::ResourceStat;
 
 /// the period for reporting
 const REPORT_PERIOD: Duration = Duration::from_secs(60 * 60);
 
-#[derive(TypedBuilder)]
 pub struct ResourceReporter {
-    /// config.agent.report_url + "/agent/UpdateUsedResource"
+    stat: Arc<Container>,
     update_url: Url,
     http_client: Arc<ClientWithMiddleware>,
-    stat: Arc<ResourceStat>,
 }
 
-#[async_trait::async_trait]
-impl BackgroundService for ResourceReporter {
-    async fn run(&self) {
+impl ResourceReporter {
+    pub fn new(container: Arc<Container>, base_url: Url) -> Self {
+        Self {
+            http_client: container.default_http_client.clone(),
+            stat: container,
+            update_url: base_url.join("agent/UpdateUsedResource").unwrap(),
+        }
+    }
+
+    pub async fn run(&self) {
         loop {
             if let Err(e) = self.update().await {
                 tracing::error!(

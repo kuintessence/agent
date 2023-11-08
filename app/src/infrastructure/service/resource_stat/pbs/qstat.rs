@@ -23,7 +23,7 @@ pub enum JobState {
 }
 
 impl Status {
-    pub const ARGS: &[&'static str] = &["-f", "-F", "json"];
+    pub const ARGS: &'static [&'static str] = &["-f", "-F", "json"];
 
     #[inline]
     pub fn new(s: &[u8]) -> serde_json::Result<Self> {

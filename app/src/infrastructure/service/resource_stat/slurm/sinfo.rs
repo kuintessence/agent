@@ -48,7 +48,7 @@ impl<Node> Info<Node> {
 }
 
 impl Info<NodeTotal> {
-    pub const ARGS: &[&'static str] = &["-o", "'%n %m %c'"];
+    pub const ARGS: &'static [&'static str] = &["-o", "'%n %m %c'"];
 
     pub fn new(s: &[u8]) -> anyhow::Result<Self> {
         let mut reader = csv::ReaderBuilder::new().delimiter(b' ').from_reader(s);
@@ -64,7 +64,7 @@ impl Info<NodeTotal> {
 }
 
 impl Info<NodeAlloc> {
-    pub const ARGS: &[&'static str] = &["-o", "'%n %m %e %C'"];
+    pub const ARGS: &'static [&'static str] = &["-o", "'%n %m %e %C'"];
 
     #[inline]
     pub fn new(s: &[u8]) -> anyhow::Result<Self> {

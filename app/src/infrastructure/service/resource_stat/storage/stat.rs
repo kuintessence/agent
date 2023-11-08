@@ -1,10 +1,10 @@
 use anyhow::{bail, Context};
 use rustix::path::Arg;
 
-use crate::infrastructure::command::SshProxy;
+use crate::infrastructure::command::MaybeSsh;
 
-pub async fn total(proxy: &SshProxy) -> anyhow::Result<u64> {
-    let output = proxy
+pub async fn total(maybe_ssh: &impl MaybeSsh) -> anyhow::Result<u64> {
+    let output = maybe_ssh
         .command("stat")
         .args(["-f", "-c", "'%S %b'", "."])
         .output()
@@ -20,8 +20,8 @@ pub async fn total(proxy: &SshProxy) -> anyhow::Result<u64> {
         .context("The format of `stat` result is wrong")
 }
 
-pub async fn used(proxy: &SshProxy) -> anyhow::Result<u64> {
-    let output = proxy
+pub async fn used(maybe_ssh: &impl MaybeSsh) -> anyhow::Result<u64> {
+    let output = maybe_ssh
         .command("stat")
         .args(["-f", "-c", "'%S %b %f'", "."])
         .output()

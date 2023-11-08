@@ -5,34 +5,26 @@ use tokio::process::Command;
 
 use super::ssh_proxy::SshConfig;
 
-pub struct Scp {
-    ssh: SshConfig,
+pub trait Scp {
+    fn scp(&self) -> Option<(ScpCommand, &SshConfig)>;
+}
+
+impl<Ctx> Scp for Ctx
+where
+    Ctx: AsRef<Option<SshConfig>>,
+{
+    fn scp(&self) -> Option<(ScpCommand, &SshConfig)> {
+        self.as_ref().as_ref().map(|ssh| {
+            let mut base = Command::new("scp");
+            base.args(["-P", &ssh.port]);
+            (ScpCommand { ssh, base }, ssh)
+        })
+    }
 }
 
 pub struct ScpCommand<'a> {
     ssh: &'a SshConfig,
     base: Command,
-}
-
-impl Scp {
-    #[inline]
-    pub fn new(ssh: SshConfig) -> Scp {
-        Self { ssh }
-    }
-
-    pub fn command(&self) -> ScpCommand {
-        let mut base = Command::new("scp");
-        base.args(["-P", &self.ssh.port]);
-        ScpCommand {
-            ssh: &self.ssh,
-            base,
-        }
-    }
-
-    #[inline]
-    pub fn config(&self) -> &SshConfig {
-        &self.ssh
-    }
 }
 
 impl Deref for ScpCommand<'_> {

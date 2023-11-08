@@ -2,18 +2,23 @@ mod pbsnodes;
 mod qstat;
 
 use anyhow::{bail, Context};
-use async_trait::async_trait;
+use dep_inj_target::dep_inj_target;
 
 use self::pbsnodes::{NodeAssigned, NodeAvailable};
 use super::{SchedulerStat, SchedulerTotalResources, SchedulerUsedResources};
-use crate::infrastructure::command::SshProxy;
+use crate::infrastructure::command::MaybeSsh;
 
+#[dep_inj_target]
 pub struct Pbs;
 
-#[async_trait]
-impl SchedulerStat for Pbs {
-    async fn total(&self, proxy: &SshProxy) -> anyhow::Result<SchedulerTotalResources> {
-        let output = proxy
+#[async_trait::async_trait]
+impl<Deps> SchedulerStat for Pbs<Deps>
+where
+    Deps: MaybeSsh + Send + Sync,
+{
+    async fn total(&self) -> anyhow::Result<SchedulerTotalResources> {
+        let output = self
+            .prj_ref()
             .command("pbsnodes")
             .args(pbsnodes::Status::<NodeAvailable>::ARGS)
             .output()
@@ -35,8 +40,9 @@ impl SchedulerStat for Pbs {
         })
     }
 
-    async fn used(&self, proxy: &SshProxy) -> anyhow::Result<SchedulerUsedResources> {
-        let output = proxy
+    async fn used(&self) -> anyhow::Result<SchedulerUsedResources> {
+        let output = self
+            .prj_ref()
             .command("pbsnodes")
             .args(pbsnodes::Status::<NodeAssigned>::ARGS)
             .output()
@@ -50,7 +56,8 @@ impl SchedulerStat for Pbs {
         }
         let nodes_status = pbsnodes::Status::<NodeAssigned>::new(&output.stdout)?;
 
-        let output = proxy
+        let output = self
+            .prj_ref()
             .command("qstat")
             .args(qstat::Status::ARGS)
             .output()

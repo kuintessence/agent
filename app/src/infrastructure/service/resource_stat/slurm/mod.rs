@@ -3,18 +3,24 @@ mod squeue;
 
 use anyhow::bail;
 use anyhow::Context;
-use async_trait::async_trait;
+use dep_inj_target::dep_inj_target;
 
 use self::sinfo::{NodeAlloc, NodeTotal};
-use super::{SchedulerStat, SchedulerTotalResources, SchedulerUsedResources};
-use crate::infrastructure::command::SshProxy;
+use super::SchedulerStat;
+use super::{SchedulerTotalResources, SchedulerUsedResources};
+use crate::infrastructure::command::MaybeSsh;
 
+#[dep_inj_target]
 pub struct Slurm;
 
-#[async_trait]
-impl SchedulerStat for Slurm {
-    async fn total(&self, proxy: &SshProxy) -> anyhow::Result<SchedulerTotalResources> {
-        let output = proxy
+#[async_trait::async_trait]
+impl<Deps> SchedulerStat for Slurm<Deps>
+where
+    Deps: MaybeSsh + Send + Sync,
+{
+    async fn total(&self) -> anyhow::Result<SchedulerTotalResources> {
+        let output = self
+            .prj_ref()
             .command("sinfo")
             .args(sinfo::Info::<NodeTotal>::ARGS)
             .output()
@@ -36,8 +42,9 @@ impl SchedulerStat for Slurm {
         })
     }
 
-    async fn used(&self, proxy: &SshProxy) -> anyhow::Result<SchedulerUsedResources> {
-        let output = proxy
+    async fn used(&self) -> anyhow::Result<SchedulerUsedResources> {
+        let output = self
+            .prj_ref()
             .command("sinfo")
             .args(sinfo::Info::<NodeAlloc>::ARGS)
             .output()
@@ -51,7 +58,8 @@ impl SchedulerStat for Slurm {
         }
         let info = sinfo::Info::<NodeAlloc>::new(&output.stdout)?;
 
-        let output = proxy
+        let output = self
+            .prj_ref()
             .command("squeue")
             .args(squeue::Status::ARGS)
             .output()

@@ -1,6 +1,7 @@
 use reqwest::{Client, IntoUrl, RequestBuilder};
 use reqwest_middleware::ClientWithMiddleware;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 #[derive(Debug, Deserialize)]
 pub struct GrantInfo {
@@ -8,11 +9,7 @@ pub struct GrantInfo {
     pub refresh_token: String,
 }
 
-pub async fn login(
-    client: &Client,
-    url: impl IntoUrl,
-    client_id: &str,
-) -> reqwest::Result<LoginInfo> {
+pub async fn login(client: &Client, url: Url, client_id: &str) -> reqwest::Result<LoginInfo> {
     client
         .post(url)
         .form(&[("client_id", client_id)])
@@ -25,7 +22,7 @@ pub async fn login(
 
 pub fn grant_request(
     client: &Client,
-    url: impl IntoUrl,
+    url: Url,
     client_id: &str,
     device_code: &str,
 ) -> RequestBuilder {
