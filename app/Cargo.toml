@@ -40,8 +40,11 @@ task-local-extensions = "0.1"
 url = { version = "2.5", features = ["serde"] }
 base64-url = "2.0"
 # middlewares
-rdkafka = "0.35"
-rustix = { version = "0.38", default-features = false, features = ["fs"] }
+rdkafka = "0.36"
+rustix = { version = "0.38", default-features = false, features = [
+  "fs",
+  "std",
+] }
 walkdir = "2"
 # TUI
 colored = "2.0"

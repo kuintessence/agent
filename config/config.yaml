@@ -1,0 +1,40 @@
+telemetry:
+  enable: true
+  console:
+    enable: true
+    filter: "agent=debug,domain=debug,service=debug"
+  file:
+    enable: true
+    verbose: true
+    filter: "agent=debug,domain=debug,service=debug"
+    # Replace this like: /home/path/to/logs
+    path: "<replace>"
+    rolling_time: daily
+host:
+  bind_address: "0.0.0.0"
+  bind_port: 80
+  upload_file_path: "."
+db:
+  # Replace this like: /home/path/to/data
+  url: "<replace>"
+mq:
+  producer:
+    bootstrap.servers: "<replace>"
+  consumer:
+    bootstrap.servers: "<replace>"
+    group.id: "1"
+    enable.partition.eof: "false"
+    session.timeout.ms: "6000"
+    enable.auto.commit: "true"
+# Kuintessence backend url
+server: "<replace>"
+# Oidc server url
+oidc_server: "<replace>"
+refresh_jobs_interval: 5
+# Replace this like: /home/path/to/tasks
+save_path: "<replace>"
+# Oidc client id
+client_id: "<replace>"
+scheduler:
+  # pbs or slurm
+  type: "<replace>"
