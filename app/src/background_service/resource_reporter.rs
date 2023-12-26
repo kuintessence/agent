@@ -1,8 +1,9 @@
+use std::ops::ControlFlow;
 use std::sync::Arc;
 use std::time::Duration;
 
+use infrastructure::sync::timer;
 use reqwest_middleware::ClientWithMiddleware;
-use tokio::time::sleep;
 use url::Url;
 
 use crate::infrastructure::ioc::Container;
@@ -27,14 +28,15 @@ impl ResourceReporter {
     }
 
     pub async fn run(&self) {
-        loop {
+        timer::new::<(), _, _>(REPORT_PERIOD, || async {
             if let Err(e) = self.update().await {
                 tracing::error!(
                     "Failed to update resources on computing orchestration system: {e}"
                 );
             }
-            sleep(REPORT_PERIOD).await;
-        }
+            ControlFlow::Continue(())
+        })
+        .await;
     }
 }
 
