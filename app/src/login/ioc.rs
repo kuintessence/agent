@@ -21,6 +21,7 @@ pub struct BootLoader {
 enum JobScheduler {
     Pbs,
     Slurm,
+    Lsf,
 }
 
 impl BootLoader {
@@ -30,6 +31,7 @@ impl BootLoader {
         let job_scheduler = match config.scheduler.r#type.to_lowercase().as_str() {
             "pbs" => JobScheduler::Pbs,
             "slurm" => JobScheduler::Slurm,
+            "lsf" => JobScheduler::Lsf,
             _ => {
                 anyhow::bail!("Unknown `job.scheduler.type`")
             }
@@ -48,6 +50,7 @@ impl SchedulerStat for BootLoader {
         match self.job_scheduler {
             JobScheduler::Pbs => Pbs::inj_ref(self).total().await,
             JobScheduler::Slurm => Slurm::inj_ref(self).total().await,
+            JobScheduler::Lsf => Ok(SchedulerTotalResources::default()),
         }
     }
 
@@ -55,6 +58,7 @@ impl SchedulerStat for BootLoader {
         match self.job_scheduler {
             JobScheduler::Pbs => Pbs::inj_ref(self).used().await,
             JobScheduler::Slurm => Slurm::inj_ref(self).used().await,
+            JobScheduler::Lsf => Ok(SchedulerUsedResources::default()),
         }
     }
 }
