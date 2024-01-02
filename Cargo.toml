@@ -2,6 +2,9 @@
 resolver = "2"
 members = ["app", "infrastructure", "domain", "service"]
 
+[workspace.package]
+license = "AGPL-3.0"
+
 [workspace.dependencies.alice-infrastructure]
 git = "https://github.com/kuintessence/alice"
 features = ["telemetry"]
