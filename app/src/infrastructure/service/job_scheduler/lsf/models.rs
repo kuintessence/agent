@@ -1,6 +1,7 @@
-use std::io::BufRead;
+use anyhow::Context;
 use regex::Regex;
 use serde::Deserialize;
+use std::io::BufRead;
 
 #[derive(Debug)]
 pub struct LsfJobs {
@@ -10,9 +11,26 @@ pub struct LsfJobs {
 #[derive(Debug, Deserialize)]
 pub struct LsfJob {
     #[serde(rename = "JOBID")]
-    pub job_id: String,
+    pub id: String,
     #[serde(rename = "STAT")]
     pub state: String,
+    #[serde(rename = "JOB_NAME")]
+    pub job_name: String,
+    #[serde(rename = "FROM")]
+    pub user: String,
+}
+
+impl LsfJob {
+    #[inline]
+    pub fn parse_job_id(s: &str) -> anyhow::Result<String> {
+        let e_str = "Id parse error";
+        Ok(s.strip_prefix("Job <")
+            .context(e_str)?
+            .split_once('>')
+            .context(e_str)?
+            .0
+            .to_string())
+    }
 }
 
 impl LsfJobs {
@@ -43,18 +61,27 @@ impl LsfJobs {
 
 #[cfg(test)]
 mod tests {
+    use crate::infrastructure::service::job_scheduler::LsfJob;
+
     use super::LsfJobs;
     use indoc::indoc;
 
     #[test]
     fn deserialize() {
         let out = indoc! {"
-JOBID   STAT     USER       JOB_NAME        QUEUE             FROM         SUBMIT_TIME    START_TIME     NODENUM NODELIST
---------------------------------------------------------------------------------------------------------------------------
-3402265 EXIT     suanwang   07bc9b07        q_share           sn01         Dec 26 14:50   Dec 26 14:50   -       -
-3402266 DONE     suanwang   07bc9b07        q_share           sn01         Dec 26 14:51   Dec 26 14:51   -       -
-3402270 RUN      suanwang   vasp_test       q_share           sn01         Dec 26 14:53   Dec 26 14:53   1       668"};
+            JOBID   STAT     USER       JOB_NAME        QUEUE             FROM         SUBMIT_TIME    START_TIME     NODENUM NODELIST
+            --------------------------------------------------------------------------------------------------------------------------
+            3402265 EXIT     suanwang   07bc9b07        q_share           sn01         Dec 26 14:50   Dec 26 14:50   -       -
+            3402266 DONE     suanwang   07bc9b07        q_share           sn01         Dec 26 14:51   Dec 26 14:51   -       -
+            3402270 RUN      suanwang   vasp_test       q_share           sn01         Dec 26 14:53   Dec 26 14:53   1       668"};
 
         LsfJobs::new(out.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn parse_job_id() {
+        let sub_std_out = "Job <3407845> has been submitted to queue <q_share>";
+        let id = LsfJob::parse_job_id(sub_std_out).unwrap();
+        assert_eq!("3407845", id);
     }
 }
