@@ -26,7 +26,7 @@ impl Status {
     pub const ARGS: &'static [&'static str] = &[
         "-h",
         "-t",
-        "'pending,running,suspended'",
+        "PENDING,RUNNING,SUSPENDED",
         "-r",
         "-o",
         "'%T'",

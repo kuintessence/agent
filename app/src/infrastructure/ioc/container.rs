@@ -11,7 +11,7 @@ use crate::infrastructure::{
     service::{
         download_file::DownloadFileState,
         file_load::FileLoadState,
-        job_scheduler::{PBSClientState, SlurmClientState},
+        job_scheduler::{LsfClientState, PBSClientState, SlurmClientState},
         software_deployer::{ApptainerDeployerState, SpackDeployerState},
         task_status_reporter::TaskStatusReporterState,
         upload_file::UploadFileState,
@@ -58,6 +58,7 @@ pub struct Container {
 pub(super) enum JobSchedulerState {
     Pbs(PBSClientState),
     Slurm(SlurmClientState),
+    Lsf(LsfClientState),
 }
 
 impl AsRef<PBSClientState> for Container {
@@ -74,6 +75,15 @@ impl AsRef<SlurmClientState> for Container {
         match &self.job_scheduler {
             JobSchedulerState::Slurm(client) => client,
             _ => panic!("Agent isn't usnig Slurm"),
+        }
+    }
+}
+
+impl AsRef<LsfClientState> for Container {
+    fn as_ref(&self) -> &LsfClientState {
+        match &self.job_scheduler {
+            JobSchedulerState::Lsf(client) => client,
+            _ => panic!("Agent isn't using Lsf"),
         }
     }
 }

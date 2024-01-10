@@ -51,7 +51,8 @@ impl Info<NodeTotal> {
     pub const ARGS: &'static [&'static str] = &["-o", "'%n %m %c'"];
 
     pub fn new(s: &[u8]) -> anyhow::Result<Self> {
-        let mut reader = csv::ReaderBuilder::new().delimiter(b' ').from_reader(s);
+        let s = s.iter().cloned().filter(|c| *c != b'\'').collect::<Vec<_>>();
+        let mut reader = csv::ReaderBuilder::new().delimiter(b' ').from_reader(s.as_slice());
         Ok(Self {
             nodes: reader.deserialize().collect::<Result<Vec<NodeTotal>, _>>()?,
         })
@@ -68,7 +69,8 @@ impl Info<NodeAlloc> {
 
     #[inline]
     pub fn new(s: &[u8]) -> anyhow::Result<Self> {
-        let mut reader = csv::ReaderBuilder::new().delimiter(b' ').from_reader(s);
+        let s = s.iter().cloned().filter(|c| *c != b'\'').collect::<Vec<_>>();
+        let mut reader = csv::ReaderBuilder::new().delimiter(b' ').from_reader(s.as_slice());
         Ok(Self {
             nodes: reader
                 .deserialize()
@@ -132,12 +134,12 @@ mod tests {
     #[test]
     fn test_info_total() {
         let s = indoc! {"
-            HOSTNAMES MEMORY CPUS
-            foo0042 190000 8
-            foo1145 200000 16
-            foo1919 210000 32
-            foo2023 200000 64
-            foo5514 150000 128
+            'HOSTNAMES MEMORY CPUS'
+            'foo0042 190000 8'
+            'foo1145 200000 16'
+            'foo1919 210000 32'
+            'foo2023 200000 64'
+            'foo5514 150000 128'
         "};
         let info = Info::<NodeTotal>::new(s.as_bytes()).unwrap();
         assert_eq!(
@@ -172,12 +174,12 @@ mod tests {
     #[test]
     fn test_info_alloc() {
         let s = indoc! {"
-            HOSTNAMES MEMORY FREE_MEM CPUS(A/I/O/T)
-            foo0042 190000 184421 8/48/0/56
-            foo1145 190000 184420 0/56/0/56
-            foo1919 190000 184237 0/56/0/56
-            foo2023 190000 184318 0/56/0/56
-            foo5514 190000 183838 0/56/0/56
+            'HOSTNAMES MEMORY FREE_MEM CPUS(A/I/O/T)'
+            'foo0042 190000 184421 8/48/0/56'
+            'foo1145 190000 184420 0/56/0/56'
+            'foo1919 190000 184237 0/56/0/56'
+            'foo2023 190000 184318 0/56/0/56'
+            'foo5514 190000 183838 0/56/0/56'
         "};
         let info = Info::<NodeAlloc>::new(s.as_bytes()).unwrap();
         assert_eq!(

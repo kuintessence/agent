@@ -28,8 +28,9 @@ where
             .context("sinfo")?;
         if !output.status.success() {
             bail!(
-                "sinfo terminated with an exception. Exit status: {}",
-                output.status
+                "sinfo total terminated with an exception. Exit status: {}, stderr:\n {}",
+                output.status,
+                String::from_utf8(output.stderr)?
             );
         }
 
@@ -52,8 +53,9 @@ where
             .context("sinfo")?;
         if !output.status.success() {
             bail!(
-                "sinfo terminated with an exception. Exit status: {}",
-                output.status
+                "sinfo alloc terminated with an exception. Exit status: {}, stderr:\n {}",
+                output.status,
+                String::from_utf8(output.stderr)?
             );
         }
         let info = sinfo::Info::<NodeAlloc>::new(&output.stdout)?;
@@ -65,10 +67,12 @@ where
             .output()
             .await
             .context("squeue")?;
+
         if !output.status.success() {
             bail!(
-                "squeue terminated with an exception. Exit status: {}",
-                output.status
+                "squeue terminated with an exception. Exit status: {}, stderr:\n {}",
+                output.status,
+                String::from_utf8(output.stderr)?
             );
         }
         let jobs_status = squeue::Status::new(&output.stdout);

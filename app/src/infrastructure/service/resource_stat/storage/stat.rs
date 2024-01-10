@@ -12,8 +12,9 @@ pub async fn total(maybe_ssh: &impl MaybeSsh) -> anyhow::Result<u64> {
         .context("stat")?;
     if !output.status.success() {
         bail!(
-            "`stat` terminated with an exception. Exit status: {}",
-            output.status
+            "`stat` total terminated with an exception. Exit status: {}, stderr: {}",
+            output.status,
+            String::from_utf8(output.stderr)?
         );
     }
     parse_total_storage(&output.stdout.to_string_lossy())
@@ -29,8 +30,9 @@ pub async fn used(maybe_ssh: &impl MaybeSsh) -> anyhow::Result<u64> {
         .context("stat")?;
     if !output.status.success() {
         bail!(
-            "`stat` terminated with an exception. Exit status: {}",
-            output.status
+            "`stat` used terminated with an exception. Exit status: {}, stderr: {}",
+            output.status,
+            String::from_utf8(output.stderr)?
         );
     }
     parse_used_storage(&output.stdout.to_string_lossy())

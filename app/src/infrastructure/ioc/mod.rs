@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use service::prelude::*;
 
 const REQ_TIMEOUT: Duration = Duration::from_secs(20);
@@ -27,7 +28,9 @@ use crate::{
 
 pub use self::container::Container;
 
-use super::service::task_status_reporter::TaskStatusReporterState;
+use super::service::{
+    job_scheduler::LsfClientState, task_status_reporter::TaskStatusReporterState,
+};
 
 impl Container {
     pub async fn new(
@@ -134,6 +137,11 @@ impl Container {
             "slurm" => JobSchedulerState::Slurm(SlurmClientState::new(
                 config.save_path.clone(),
                 include_env,
+            )),
+            "lsf" => JobSchedulerState::Lsf(LsfClientState::new(
+                config.save_path.clone(),
+                include_env,
+                config.scheduler.queue.clone().context("Lsf need to specify queue.")?,
             )),
             t => {
                 anyhow::bail!("Unsupported `job.scheduler.type`: {t}");
