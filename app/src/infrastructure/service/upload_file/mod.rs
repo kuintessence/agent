@@ -82,7 +82,7 @@ impl From<RawUploadFileService> for UploadFileState {
             prepare_upload_url: base_url
                 .join("file-storage/PreparePartialUploadFromNodeInstance")
                 .unwrap(),
-            upload_info_url: base_url.join("PartialUploadInfo/").unwrap(),
+            upload_info_url: base_url.join("file-storage/PartialUploadInfo/").unwrap(),
             client,
             inner: Arc::new(UploadFileServiceInner {
                 block_size,
