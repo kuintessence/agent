@@ -191,7 +191,8 @@ where
                     .next()
                     .with_context(|| {
                         format!("Unable to get partition from sinfo -h. stdout: {sinfo_out}")
-                    })?;
+                    })?
+                    .replace('*', "");
                 let out = self
                     .prj_ref()
                     .command("cd")
@@ -281,14 +282,14 @@ where
 impl<Deps> SlurmClient<Deps> {
     fn gen_script(base_path: &str, include_env: &str, script_info: ScriptInfo) -> String {
         let header = "#!/bin/bash";
-        let id = script_info.id.clone();
+        let parent_id = script_info.parent_id.clone();
         let env: Vec<String> = script_info
             .environments
             .iter()
             .map(|(k, v)| format!("export {}={}", k, v))
             .collect();
         let env_string = env.join("\n");
-        let touch = format!("echo -n \"{}\" > $SLURM_SUBMIT_DIR/.co.sig", script_info.id);
+        let touch = format!("echo -n \"{}\" > $SLURM_SUBMIT_DIR/.co.sig", parent_id);
         let script = format!("{} {}", script_info.name, script_info.arguments.join(" "));
         let script = match script_info.std_in {
             Some(StdInKind::Text { text }) => {
@@ -338,16 +339,17 @@ impl<Deps> SlurmClient<Deps> {
                 header
             }
         };
+        // mpirun -np $SLURM_NPROCS {script}
         formatdoc! {r#"
             {header}
-            #SBATCH --output={base_path}/{id}/STDOUT
-            #SBATCH --error={base_path}/{id}/STDERR
+            #SBATCH --output={base_path}/{parent_id}/STDOUT
+            #SBATCH --error={base_path}/{parent_id}/STDERR
             cd $SLURM_SUBMIT_DIR
             {resource_header}
             {env_string}
             {include_env}
             {load_software}
-            mpirun -np $SLURM_NPROCS {script}
+            {script}
             ec=$?
             {touch}
             exit $ec
