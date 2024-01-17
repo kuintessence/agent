@@ -25,7 +25,7 @@ use crate::{
     infrastructure::service::{
         download_file::DownloadFileService,
         file_load::FileLoadServiceImpl,
-        job_scheduler::{PbsClient, SlurmClient},
+        job_scheduler::{LsfClient, PbsClient, SlurmClient},
         resource_stat::{
             Pbs, ResourceStat, ResourceStatImpl, SchedulerStat, SchedulerTotalResources,
             SchedulerUsedResources, Slurm, TotalResources, UsedResources,
@@ -100,6 +100,7 @@ impl JobScheduler for Container {
         match self.job_scheduler {
             JobSchedulerState::Pbs(_) => PbsClient::inj_ref(self).get_jobs().await,
             JobSchedulerState::Slurm(_) => SlurmClient::inj_ref(self).get_jobs().await,
+            JobSchedulerState::Lsf(_) => LsfClient::inj_ref(self).get_jobs().await,
         }
     }
 
@@ -107,6 +108,7 @@ impl JobScheduler for Container {
         match self.job_scheduler {
             JobSchedulerState::Pbs(_) => PbsClient::inj_ref(self).get_job(id).await,
             JobSchedulerState::Slurm(_) => SlurmClient::inj_ref(self).get_job(id).await,
+            JobSchedulerState::Lsf(_) => LsfClient::inj_ref(self).get_job(id).await,
         }
     }
 
@@ -118,6 +120,9 @@ impl JobScheduler for Container {
             JobSchedulerState::Slurm(_) => {
                 SlurmClient::inj_ref(self).submit_job_script(script_info).await
             }
+            JobSchedulerState::Lsf(_) => {
+                LsfClient::inj_ref(self).submit_job_script(script_info).await
+            }
         }
     }
 
@@ -125,6 +130,7 @@ impl JobScheduler for Container {
         match self.job_scheduler {
             JobSchedulerState::Pbs(_) => PbsClient::inj_ref(self).submit_job(script_path).await,
             JobSchedulerState::Slurm(_) => SlurmClient::inj_ref(self).submit_job(script_path).await,
+            JobSchedulerState::Lsf(_) => LsfClient::inj_ref(self).submit_job(script_path).await,
         }
     }
 
@@ -132,6 +138,7 @@ impl JobScheduler for Container {
         match self.job_scheduler {
             JobSchedulerState::Pbs(_) => PbsClient::inj_ref(self).delete_job(job_id).await,
             JobSchedulerState::Slurm(_) => SlurmClient::inj_ref(self).delete_job(job_id).await,
+            JobSchedulerState::Lsf(_) => LsfClient::inj_ref(self).delete_job(job_id).await,
         }
     }
 
@@ -139,6 +146,7 @@ impl JobScheduler for Container {
         match self.job_scheduler {
             JobSchedulerState::Pbs(_) => PbsClient::inj_ref(self).pause_job(job_id).await,
             JobSchedulerState::Slurm(_) => SlurmClient::inj_ref(self).pause_job(job_id).await,
+            JobSchedulerState::Lsf(_) => LsfClient::inj_ref(self).pause_job(job_id).await,
         }
     }
 
@@ -146,6 +154,7 @@ impl JobScheduler for Container {
         match self.job_scheduler {
             JobSchedulerState::Pbs(_) => PbsClient::inj_ref(self).continue_job(job_id).await,
             JobSchedulerState::Slurm(_) => SlurmClient::inj_ref(self).continue_job(job_id).await,
+            JobSchedulerState::Lsf(_) => LsfClient::inj_ref(self).continue_job(job_id).await,
         }
     }
 }
@@ -228,6 +237,7 @@ impl SchedulerStat for Container {
         match self.job_scheduler {
             JobSchedulerState::Pbs(_) => Pbs::inj_ref(self).total().await,
             JobSchedulerState::Slurm(_) => Slurm::inj_ref(self).total().await,
+            JobSchedulerState::Lsf(_) => anyhow::bail!("Lsf doesn't implement resource_stat"),
         }
     }
 
@@ -235,6 +245,7 @@ impl SchedulerStat for Container {
         match self.job_scheduler {
             JobSchedulerState::Pbs(_) => Pbs::inj_ref(self).used().await,
             JobSchedulerState::Slurm(_) => Slurm::inj_ref(self).used().await,
+            JobSchedulerState::Lsf(_) => anyhow::bail!("Lsf doesn't implement resource_stat"),
         }
     }
 }

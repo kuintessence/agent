@@ -26,8 +26,9 @@ where
             .context("pbsnodes")?;
         if !output.status.success() {
             bail!(
-                "pbsnodes terminated with an exception. Exit status: {}",
-                output.status
+                "pbsnodes terminated with an exception. Exit status: {}, stderr: {}",
+                output.status,
+                String::from_utf8(output.stderr)?
             );
         }
 
@@ -50,8 +51,9 @@ where
             .context("pbsnodes")?;
         if !output.status.success() {
             bail!(
-                "pbsnodes terminated with an exception. Exit status: {}",
-                output.status
+                "pbsnodes terminated with an exception. Exit status: {}, stderr: {}",
+                output.status,
+                String::from_utf8(output.stderr)?
             );
         }
         let nodes_status = pbsnodes::Status::<NodeAssigned>::new(&output.stdout)?;
@@ -65,8 +67,9 @@ where
             .context("qstat")?;
         if !output.status.success() {
             bail!(
-                "qstat terminated with an exception. Exit status: {}",
-                output.status
+                "qstat terminated with an exception. Exit status: {}, stderr: {}",
+                output.status,
+                String::from_utf8(output.stderr)?
             );
         }
         let jobs_status = qstat::Status::new(&output.stdout)?;

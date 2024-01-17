@@ -23,7 +23,7 @@ pub trait SchedulerStat {
 }
 
 /// Total resources counted by scheduler
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SchedulerTotalResources {
     memory: u64,
     core_number: usize,
@@ -31,7 +31,7 @@ pub struct SchedulerTotalResources {
 }
 
 /// Used resources counted by scheduler
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SchedulerUsedResources {
     allocated_memory: u64,
     allocated_cpu_count: usize,
