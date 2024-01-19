@@ -47,7 +47,6 @@ where
             requirements,
         } = task.body;
 
-        let mut is_mpi_before_loader = false;
         let mut load_software: Option<String> = None;
 
         match facility_kind {
@@ -63,7 +62,6 @@ where
             FacilityKind::Singularity { image, tag } => {
                 let deployer = self.prj_ref().select(DeployerType::Apptainer);
                 if let Some(hash) = deployer.find_installed_hash(&image, &[tag]).await? {
-                    is_mpi_before_loader = true;
                     load_software = Some(deployer.gen_load_script(&hash));
                 }
             }
@@ -79,7 +77,6 @@ where
 
         let info = ScriptInfo {
             id: task.id.to_string(),
-            is_mpi_before_loader,
             parent_id: task.node_id.to_string(),
             name,
             load_software,

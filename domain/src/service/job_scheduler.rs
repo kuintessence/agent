@@ -11,3 +11,9 @@ pub trait JobScheduler {
     async fn pause_job(&self, job_id: &str) -> anyhow::Result<()>;
     async fn continue_job(&self, job_id: &str) -> anyhow::Result<()>;
 }
+
+pub trait PbsJobScheduler: JobScheduler {}
+
+pub trait SlurmJobScheduler: JobScheduler {}
+
+pub trait LsfJobScheduler: JobScheduler {}

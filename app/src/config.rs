@@ -41,6 +41,9 @@ pub struct AgentConfig {
 
     #[serde(default = "AgentConfig::default_client_id")]
     pub client_id: String,
+
+    #[serde(default = "AgentConfig::default_mpi")]
+    pub mpi: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -96,6 +99,10 @@ impl AgentConfig {
 
     pub fn default_refresh_jobs_interval() -> u64 {
         60
+    }
+
+    pub fn default_mpi() -> bool {
+        true
     }
 }
 

@@ -7,6 +7,5 @@ pub mod upload;
 pub use self::{
     reply::*,
     task::*,
-    text_storage::*,
     upload::*,
 };

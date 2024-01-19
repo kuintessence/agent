@@ -135,9 +135,9 @@ where
         parameters: &[String],
     ) -> anyhow::Result<Option<String>> {
         match self.find_installed_hash_from_json(name, parameters).await {
-            Ok(x) => Ok(x.get(0).cloned()),
+            Ok(x) => Ok(x.first().cloned()),
             Err(_) => {
-                Ok(self.find_installed_hash_from_lines(name, parameters).await?.get(0).cloned())
+                Ok(self.find_installed_hash_from_lines(name, parameters).await?.first().cloned())
             }
         }
     }

@@ -25,13 +25,15 @@ use crate::infrastructure::command::{MaybeSsh, Scp};
 pub struct SlurmClientState {
     base_path: String,
     include_env: String,
+    mpi: bool,
 }
 
 impl SlurmClientState {
-    pub fn new(base_path: String, include_env: String) -> Self {
+    pub fn new(base_path: String, include_env: String, mpi: bool) -> Self {
         Self {
             base_path,
             include_env,
+            mpi,
         }
     }
 }
@@ -92,7 +94,7 @@ where
                 },
             })
         }
-        match jobs.get(0).cloned() {
+        match jobs.first().cloned() {
             Some(x) => Ok(x),
             None => anyhow::bail!("No such id"),
         }
@@ -248,7 +250,7 @@ where
         path.push(script_info.path.as_str());
         tokio::fs::write(
             path,
-            Self::gen_script(&self.base_path, &self.include_env, script_info.clone()),
+            self.gen_script(&self.base_path, &self.include_env, script_info.clone()),
         )
         .await?;
         self.submit_job(script_info.path.as_str()).await
@@ -279,8 +281,11 @@ where
     }
 }
 
-impl<Deps> SlurmClient<Deps> {
-    fn gen_script(base_path: &str, include_env: &str, script_info: ScriptInfo) -> String {
+impl<Deps> SlurmClient<Deps>
+where
+    Deps: AsRef<SlurmClientState>,
+{
+    fn gen_script(&self, base_path: &str, include_env: &str, script_info: ScriptInfo) -> String {
         let header = "#!/bin/bash";
         let parent_id = script_info.parent_id.clone();
         let env: Vec<String> = script_info
@@ -299,6 +304,10 @@ impl<Deps> SlurmClient<Deps> {
                 format!("{script} < {path}")
             }
             None => script,
+        };
+        let script = match self.mpi {
+            true => format!("mpirun -np $SLURM_NPROCS {script}"),
+            false => script,
         };
         let load_software = script_info.load_software;
         let resource_header = match script_info.requirements {

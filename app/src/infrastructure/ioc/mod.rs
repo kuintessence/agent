@@ -137,6 +137,7 @@ impl Container {
             "slurm" => JobSchedulerState::Slurm(SlurmClientState::new(
                 config.save_path.clone(),
                 include_env,
+                config.mpi,
             )),
             "lsf" => JobSchedulerState::Lsf(LsfClientState::new(
                 config.save_path.clone(),

@@ -5,7 +5,6 @@ use crate::model::entity::task::execute_usecase::{Requirements, StdInKind};
 #[derive(Debug, Clone)]
 pub struct ScriptInfo {
     pub id: String,
-    pub is_mpi_before_loader: bool,
     pub parent_id: String,
     pub name: String,
     pub load_software: String,

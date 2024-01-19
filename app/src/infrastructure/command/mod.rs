@@ -2,6 +2,6 @@ mod scp;
 mod ssh_proxy;
 
 pub use self::{
-    scp::{Scp, ScpCommand},
+    scp::Scp,
     ssh_proxy::{MaybeSsh, SshConfig},
 };
