@@ -159,7 +159,7 @@ impl Container {
             .job_scheduler(job_scheduler)
             .deploy_software(DeploySoftwareState::new(5))
             .download_file(download_file)
-            .job(JobServiceState::default())
+            .job(JobServiceState::new(config.spack, config.apptainer))
             .collect_output(CollectOutputState::default())
             .upload_file(upload_file)
             .build();

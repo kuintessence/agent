@@ -44,6 +44,12 @@ pub struct AgentConfig {
 
     #[serde(default = "AgentConfig::default_mpi")]
     pub mpi: bool,
+
+    #[serde(default = "AgentConfig::default_spack")]
+    pub spack: bool,
+
+    #[serde(default = "AgentConfig::default_apptainer")]
+    pub apptainer: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -102,6 +108,14 @@ impl AgentConfig {
     }
 
     pub fn default_mpi() -> bool {
+        true
+    }
+
+    pub fn default_spack() -> bool {
+        true
+    }
+
+    pub fn default_apptainer() -> bool {
         true
     }
 }

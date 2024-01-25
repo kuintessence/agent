@@ -55,11 +55,13 @@ where
             fs::create_dir_all(path.as_path()).await?;
         }
         path.push(script_info.path.as_str());
-        fs::write(
-            path,
-            self.gen_script(&self.base_path, &self.include_env, script_info.clone()),
-        )
-        .await?;
+        let base_path = match self.prj_ref().scp() {
+            Some((_, ssh)) => format!("{}/{}", ssh.home_dir, ssh.save_dir),
+
+            None => self.base_path.to_owned(),
+        };
+        let script = self.gen_script(&base_path, &self.include_env, script_info.clone());
+        fs::write(path, script).await?;
         self.submit_job(script_info.path.as_str()).await
     }
 
@@ -70,7 +72,11 @@ where
             let Some((mut scp, ssh)) = self.prj_ref().scp() else {
                 let out = Command::new(&path).current_dir(path.parent().unwrap()).output().await?;
                 if !out.status.success() {
-                    anyhow::bail!("Exit Status not 0 for submit_job. real: {}", out.status)
+                    anyhow::bail!(
+                        "Exit Status not 0 for submit_job. real: {}, stderr: {}",
+                        out.status,
+                        String::from_utf8(out.stderr)?
+                    )
                 }
                 break 'block out;
             };
@@ -102,11 +108,18 @@ where
                 .command("cd")
                 .arg(remote_path.parent().unwrap())
                 .arg(";")
+                .args(["chmod", "+x"])
+                .arg(&remote_path)
+                .arg(";")
                 .arg(remote_path)
                 .output()
                 .await?;
             if !out.status.success() {
-                anyhow::bail!("Exit Status not 0 for submit_job. real: {}", out.status)
+                anyhow::bail!(
+                    "Exit Status not 0 for submit_job. real: {}, stderr: {}",
+                    out.status,
+                    String::from_utf8(out.stderr)?
+                )
             }
             out
         };
@@ -150,7 +163,7 @@ where
                 state: match item.state.as_str() {
                     "EXIT" => JobState::Failed,
                     "DONE" => JobState::Completed,
-                    "RUN" => JobState::Running,
+                    "RUN|EXITING" => JobState::Running,
                     _ => JobState::Unknown,
                 },
                 ..Default::default()
@@ -161,7 +174,7 @@ where
     async fn get_lsf_job(&self, id: &str) -> anyhow::Result<Job> {
         let out = self.prj_ref().command("bjobs").args(["-a", id]).output().await?;
         if !out.status.success() {
-            anyhow::bail!("Exit Status not 0 for get_pbs_job. real: {}", out.status)
+            anyhow::bail!("Exit status not 0 for get_pbs_job. real: {}", out.status)
         }
         let result = LsfJobs::new(&out.stdout)?;
         let item = result.jobs.into_iter().next().context("Job not found")?;
@@ -172,7 +185,7 @@ where
             state: match item.state.as_str() {
                 "EXIT" => JobState::Failed,
                 "DONE" => JobState::Completed,
-                "RUN" => JobState::Running,
+                "RUN|EXITING" => JobState::Running,
                 _ => JobState::Unknown,
             },
             ..Default::default()
@@ -194,7 +207,7 @@ where
             .collect();
 
         let env_string = env.join("\n");
-        let touch = format!("echo -n \"{}\" > $PBS_O_WORKDIR/.co.sig", script_info.id);
+        // let touch = format!("echo -n \"{}\" > $PBS_O_WORKDIR/.co.sig", script_info.id);
         let script = format!(
             "bsub -q {} -o {base_path}/{id}/STDOUT -host_stack 1024 -share_size 15000 -cgsp 64 {} {}",
             self.queue,
@@ -216,9 +229,6 @@ where
             {env_string}
             {include_env}
             {script}
-            result = $?
-            {touch}
-            $(exit $result)
         "#}
     }
 }

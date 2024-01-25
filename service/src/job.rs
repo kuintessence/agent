@@ -23,6 +23,18 @@ use uuid::Uuid;
 #[target(JobServiceImpl)]
 pub struct JobServiceState {
     repo: DashMap<Uuid, Job>,
+    spack: bool,
+    apptainer: bool,
+}
+
+impl JobServiceState {
+    pub fn new(spack: bool, apptainer: bool) -> Self {
+        Self {
+            spack,
+            apptainer,
+            ..Default::default()
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -47,33 +59,37 @@ where
             requirements,
         } = task.body;
 
-        let mut load_software: Option<String> = None;
+        let mut load_software: String = "".to_string();
 
         match facility_kind {
             FacilityKind::Spack {
                 name,
                 argument_list,
             } => {
-                let deployer = self.prj_ref().select(DeployerType::Spack);
-                if let Some(hash) = deployer.find_installed_hash(&name, &argument_list).await? {
-                    load_software = Some(deployer.gen_load_script(&hash));
+                if self.spack {
+                    let deployer = self.prj_ref().select(DeployerType::Spack);
+                    if let Some(hash) = deployer.find_installed_hash(&name, &argument_list).await? {
+                        load_software = deployer.gen_load_script(&hash);
+                    }
                 }
             }
             FacilityKind::Singularity { image, tag } => {
-                let deployer = self.prj_ref().select(DeployerType::Apptainer);
-                if let Some(hash) = deployer.find_installed_hash(&image, &[tag]).await? {
-                    load_software = Some(deployer.gen_load_script(&hash));
+                if self.apptainer {
+                    let deployer = self.prj_ref().select(DeployerType::Apptainer);
+                    if let Some(hash) = deployer.find_installed_hash(&image, &[tag]).await? {
+                        load_software = deployer.gen_load_script(&hash);
+                    }
                 }
             }
         }
 
-        let Some(load_software) = load_software else {
+        if (self.spack || self.apptainer) && load_software.is_empty() {
             tracing::error!(task_id = %task.id, "Execute usecase: software not found");
             return self
                 .prj_ref()
                 .report_msg(task.id, TaskStatus::Failed, "Software not found")
                 .await;
-        };
+        }
 
         let info = ScriptInfo {
             id: task.id.to_string(),
