@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::Context;
 use dashmap::DashMap;
 use dep_inj::DepInj;
@@ -17,6 +19,7 @@ use domain::{
         JobResourcesReporter, JobScheduler, JobService, SelectSoftwareDeployer, TaskService,
     },
 };
+use tokio::time::sleep;
 use uuid::Uuid;
 
 #[derive(DepInj, Default)]
@@ -103,7 +106,21 @@ where
             requirements,
         };
         let job_id = self.prj_ref().submit_job_script(info).await?;
-        let job = self.prj_ref().get_job(&job_id).await?;
+        let mut retry_time = 10;
+        let mut interval = 1;
+        let job = loop {
+            match self.prj_ref().get_job(&job_id).await {
+                Ok(job) => break job,
+                Err(e) => {
+                    if retry_time <= 0 {
+                        anyhow::bail!(e)
+                    }
+                }
+            };
+            retry_time -= 1;
+            sleep(Duration::from_secs(interval)).await;
+            interval += 1;
+        };
 
         let status = match job.state {
             JobState::Queuing => {

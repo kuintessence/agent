@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use anyhow::Context;
 use dep_inj::DepInj;
 use domain::{
     model::{
@@ -44,6 +43,7 @@ where
     Deps: AsRef<SlurmClientState> + MaybeSsh + Scp + Send + Sync,
 {
     async fn get_job(&self, id: &str) -> anyhow::Result<Job> {
+        tracing::debug!("getting job id: {id}");
         let out = self.prj_ref().command("sacct")
             .args([
                 "-PXo",
@@ -56,10 +56,11 @@ where
         if !out.status.success() {
             anyhow::bail!("Exit Status not 0 for get_job. real: {}", out.status)
         }
+        let stdout = out.stdout.iter().cloned().filter(|c| *c != b'\'').collect::<Vec<_>>();
         let mut csv_reader = csv::ReaderBuilder::new()
             .delimiter(b'|')
             .quoting(false)
-            .from_reader(out.stdout.as_slice());
+            .from_reader(stdout.as_slice());
         let mut jobs = Vec::<Job>::new();
         for record in csv_reader.deserialize() {
             let record: SlurmJob = record?;
@@ -83,8 +84,8 @@ where
                     .unwrap_or_default(),
                 resource_used: JobResources {
                     cpu: record.ncpus,
-                    avg_memory: record.ave_mem,
-                    max_memory: record.mem,
+                    avg_memory: record.ave_mem.unwrap_or(0),
+                    max_memory: record.mem.unwrap_or(0),
                     storage: 0,
                     wall_time: record.elapsed,
                     cpu_time: record.cpu_time,
@@ -137,8 +138,8 @@ where
                     .unwrap_or_default(),
                 resource_used: JobResources {
                     cpu: record.ncpus,
-                    avg_memory: record.ave_mem,
-                    max_memory: record.mem,
+                    avg_memory: record.ave_mem.unwrap_or(0),
+                    max_memory: record.mem.unwrap_or(0),
                     storage: 0,
                     wall_time: record.elapsed,
                     cpu_time: record.cpu_time,
@@ -180,57 +181,65 @@ where
                     }
                 }
                 let _ = scp.local_path(&path).remote_path(&remote_path).output().await?;
-                let sinfo_out_bytes =
-                    self.prj_ref().command("sinfo").arg("-h").output().await?.stdout;
-                let sinfo_out = String::from_utf8(sinfo_out_bytes)?;
-                let partition = sinfo_out
-                    .lines()
-                    .next()
-                    .with_context(|| {
-                        format!("Unable to get sinfo from sinfo -h. stdout: {sinfo_out}")
-                    })?
-                    .split_whitespace()
-                    .next()
-                    .with_context(|| {
-                        format!("Unable to get partition from sinfo -h. stdout: {sinfo_out}")
-                    })?
-                    .replace('*', "");
+                // let sinfo_out_bytes =
+                //     self.prj_ref().command("sinfo").arg("-h").output().await?.stdout;
+                // let sinfo_out = String::from_utf8(sinfo_out_bytes)?;
+                // let partition = sinfo_out
+                //     .lines()
+                //     .next()
+                //     .with_context(|| {
+                //         format!("Unable to get sinfo from sinfo -h. stdout: {sinfo_out}")
+                //     })?
+                //     .split_whitespace()
+                //     .next()
+                //     .with_context(|| {
+                //         format!("Unable to get partition from sinfo -h. stdout: {sinfo_out}")
+                //     })?
+                //     .replace('*', "");
                 let out = self
                     .prj_ref()
                     .command("cd")
                     .arg(remote_path.parent().unwrap())
                     .arg(";")
                     .arg("sbatch")
-                    .arg(format!("--partition={partition}"))
+                    // .arg(format!("--partition={partition}"))
                     .arg(remote_path)
                     .output()
                     .await?;
                 if !out.status.success() {
-                    anyhow::bail!("Exit Status not 0 for submit_job. real: {}", out.status)
+                    anyhow::bail!(
+                        "Exit Status not 0 for ssh submit_job. real: {}, err: {}",
+                        out.status,
+                        String::from_utf8(out.stderr)?
+                    )
                 }
                 out
             } else {
-                let sinfo_out_bytes = Command::new("sinfo").arg("-h").output().await?.stdout;
-                let sinfo_out = String::from_utf8(sinfo_out_bytes)?;
-                let partition = sinfo_out
-                    .lines()
-                    .next()
-                    .with_context(|| {
-                        format!("Unable to get sinfo from sinfo -h. stdout: {sinfo_out}")
-                    })?
-                    .split_whitespace()
-                    .next()
-                    .with_context(|| {
-                        format!("Unable to get partition from sinfo -h. stdout: {sinfo_out}")
-                    })?;
+                // let sinfo_out_bytes = Command::new("sinfo").arg("-h").output().await?.stdout;
+                // let sinfo_out = String::from_utf8(sinfo_out_bytes)?;
+                // let partition = sinfo_out
+                //     .lines()
+                //     .next()
+                //     .with_context(|| {
+                //         format!("Unable to get sinfo from sinfo -h. stdout: {sinfo_out}")
+                //     })?
+                //     .split_whitespace()
+                //     .next()
+                //     .with_context(|| {
+                //         format!("Unable to get partition from sinfo -h. stdout: {sinfo_out}")
+                //     })?;
                 let out = Command::new("sbatch")
-                    .arg(format!("--partition={partition}"))
+                    // .arg(format!("--partition={partition}"))
                     .arg(&path)
                     .current_dir(path.parent().unwrap())
                     .output()
                     .await?;
                 if !out.status.success() {
-                    anyhow::bail!("Exit Status not 0 for submit_job. real: {}", out.status)
+                    anyhow::bail!(
+                        "Exit Status not 0 for submit_job. real: {}, err: {}",
+                        out.status,
+                        String::from_utf8(out.stderr)?
+                    )
                 }
                 out
             }
