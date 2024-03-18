@@ -41,7 +41,7 @@ impl Container {
         let ssh_config = config.ssh_proxy.as_ref().map(SshConfig::new);
 
         let auth_middleware = Arc::new(AuthMiddleware::new(
-            config.oidc_server.clone(),
+            config.oidc_server.clone().join("token").unwrap(),
             &config.client_id,
             access_token,
             refresh_token,

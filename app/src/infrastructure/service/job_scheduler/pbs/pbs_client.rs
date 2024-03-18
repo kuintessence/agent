@@ -135,7 +135,7 @@ where
     }
 
     async fn delete_job(&self, job_id: &str) -> anyhow::Result<()> {
-        let out = self.prj_ref().command("qdel").args(["-p", job_id]).output().await?;
+        let out = self.prj_ref().command("qdel").args(["-x", job_id]).output().await?;
         if !out.status.success() {
             anyhow::bail!("Exit Status not 0 for delete_job. real: {}", out.status)
         }

@@ -106,6 +106,7 @@ where
             requirements,
         };
         let job_id = self.prj_ref().submit_job_script(info).await?;
+        tracing::info!("Started job id: *{job_id}*");
         let mut retry_time = 10;
         let mut interval = 1;
         let job = loop {
@@ -146,8 +147,19 @@ where
     }
 
     async fn pause(&self, id: Uuid) -> anyhow::Result<()> {
-        let job_id = self.repo.get(&id).map(|job| job.id.clone()).context("Job not found")?;
-        self.prj_ref().pause_job(&job_id).await?;
+        let mut retry_times = 0;
+        let job_id = loop {
+            if let Some(job_id) = self.repo.get(&id).map(|job| job.id.clone()) {
+                break Ok(job_id);
+            };
+            if retry_times > 10 {
+                break Err(anyhow::anyhow!("Job not found"));
+            }
+
+            sleep(Duration::from_secs(retry_times + 1)).await;
+            retry_times += 1;
+        };
+        self.prj_ref().pause_job(&job_id?).await?;
         self.refresh(id).await
     }
 
@@ -158,8 +170,19 @@ where
     }
 
     async fn cancel(&self, id: Uuid) -> anyhow::Result<()> {
-        let job = self.repo.remove(&id).context("Job not found")?.1;
-        self.prj_ref().delete_job(&job.id).await?;
+        let mut retry_times = 0;
+        let job_id = loop {
+            if let Some(job_id) = self.repo.remove(&id).map(|job| job.1.id.clone()) {
+                break Ok(job_id);
+            };
+            if retry_times > 10 {
+                break Err(anyhow::anyhow!("job not found"));
+            }
+
+            sleep(Duration::from_secs(retry_times + 1)).await;
+            retry_times += 1;
+        };
+        self.prj_ref().delete_job(&job_id?).await?;
         self.prj_ref().report(id, TaskStatus::Cancelled).await
     }
 }
