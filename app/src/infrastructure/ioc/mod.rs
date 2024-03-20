@@ -144,11 +144,6 @@ impl Container {
                 include_env,
                 config.scheduler.queue.clone().context("Lsf need to specify queue.")?,
             )),
-            "lsf" => JobSchedulerState::Lsf(LsfClientState::new(
-                config.save_path.clone(),
-                include_env,
-                config.scheduler.queue.clone().context("Lsf need to specify queue.")?,
-            )),
             t => {
                 anyhow::bail!("Unsupported `job.scheduler.type`: {t}");
             }
